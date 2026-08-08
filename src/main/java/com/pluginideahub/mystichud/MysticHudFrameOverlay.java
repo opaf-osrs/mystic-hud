@@ -271,7 +271,9 @@ public class MysticHudFrameOverlay extends Overlay
 				tx = x + (w - tw) / 2;
 				break;
 			case CENTRED:
-				ix = x + Math.max(padX, (w - (iw + gap + tw)) / 2);
+				// gap is left out of the centring on purpose: it should push the value
+				// away from the icon, not slide the icon along with it
+				ix = x + Math.max(padX, (w - (iw + tw)) / 2);
 				tx = ix + iw + gap;
 				break;
 			case RIGHT_EDGE:
@@ -285,8 +287,10 @@ public class MysticHudFrameOverlay extends Overlay
 				break;
 		}
 
-		// stacked centres the icon and value as a column; the rest centre each on the row
-		int top = y + (vh - (ih + gap + th)) / 2;
+		// stacked centres the icon and value as a column; the rest centre each on the row.
+		// gap is left out of the centring here too, so widening it drops the value down
+		// the block and leaves the icon where it was
+		int top = y + (vh - (ih + th)) / 2;
 		if (icon != null)
 		{
 			int iy = (stacked ? top : y + (vh - ih) / 2) + config.orbIconNudgeY();
