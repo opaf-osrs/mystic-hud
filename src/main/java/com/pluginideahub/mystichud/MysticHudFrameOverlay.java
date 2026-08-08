@@ -239,12 +239,17 @@ public class MysticHudFrameOverlay extends Overlay
 			int nw = icon.getWidth();
 			int nh = icon.getHeight();
 			int cap = config.orbIconSize();
+			// NOTHING here may depend on the gap. it used to be part of both budgets, so
+			// widening the gap shrank the icon, and since the icon is anchored on its left
+			// or its centre the retreating edge read as the gap shoving it away. the gap
+			// moves the value and only the value; past the point where the value would
+			// leave the block it stops moving rather than the icon giving up size.
 			if (stacked)
 			{
 				// stacked spends the row's HEIGHT on the icon, which is the axis that
 				// actually grows, so this is the only layout where a tall row buys a
 				// bigger icon
-				cap = Math.min(cap, Math.min(w - 2, Math.max(6, vh - th - gap - 2)));
+				cap = Math.min(cap, Math.min(w - 2, Math.max(6, vh - th - 2)));
 			}
 			else
 			{
@@ -253,7 +258,7 @@ public class MysticHudFrameOverlay extends Overlay
 				// width first and give the icon the rest, or a big icon silently clips
 				// the last digit off. measured on the WIDEST value a block can show, not
 				// the current one, so all four agree and nothing resizes as stats move.
-				int room = w - padX - gap - fm.stringWidth("000") - TEXT_EDGE_PAD;
+				int room = w - padX - fm.stringWidth("000") - TEXT_EDGE_PAD;
 				cap = Math.min(cap, Math.min(vh - 2, Math.max(6, room)));
 			}
 			double s = Math.min(cap / (double) nw, cap / (double) nh);
@@ -286,6 +291,11 @@ public class MysticHudFrameOverlay extends Overlay
 				tx = ix + iw + gap;
 				break;
 		}
+		if (!stacked)
+		{
+			// the value runs out of block before the icon does; hold it at the edge
+			tx = Math.min(tx, x + w - TEXT_EDGE_PAD - tw);
+		}
 
 		// stacked centres the icon and value as a column; the rest centre each on the row.
 		// gap is left out of the centring here too, so widening it drops the value down
@@ -313,7 +323,7 @@ public class MysticHudFrameOverlay extends Overlay
 
 		// no fudge on the baseline: the -2 that used to be here sat the value 2px above
 		// true centre, which is the other half of why the nudges differed by mode
-		int ty = (stacked ? top + ih + gap + th : y + (vh + th) / 2)
+		int ty = (stacked ? Math.min(top + ih + gap + th, y + vh - 1) : y + (vh + th) / 2)
 			+ config.orbTextNudgeY();
 		g.setColor(Color.BLACK);
 		g.drawString(value, tx + 1, ty + 1);
