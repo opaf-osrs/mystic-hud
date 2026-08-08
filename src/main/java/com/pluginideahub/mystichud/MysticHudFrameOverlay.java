@@ -168,6 +168,9 @@ public class MysticHudFrameOverlay extends Overlay
 		return null;
 	}
 
+	private static final int ICON_PAD = 3; // left inset of the icon inside its block
+	private static final int ICON_GAP = 3; // icon to number
+
 	private void block(Graphics2D g, int x, int y, int w, int h, int orbChild)
 	{
 		Color c = orbColor(orbChild);
@@ -181,26 +184,44 @@ public class MysticHudFrameOverlay extends Overlay
 		g.setColor(EDGE);
 		g.drawRect(x, y, w - 1, h - 1);
 
-		// icon left at its NATIVE size, number right, pulled off the border. these are
-		// pixel art authored at 14..20px for the stock orbs and the four differ in both
-		// size and aspect (15x14, 20x20, 15x18, 16x16), so normalising them onto a common
-		// height meant a non-integer rescale on every one of them: the heart lost its
-		// white cross and the swords smeared. drawing 1:1 is the only way they stay sharp,
-		// and the text guard below already stops a 20px icon colliding with a 3-digit
-		// number in the ~43px slot.
+		// icon left, number immediately after it. the four stock icons are pixel art
+		// authored at different sizes and aspects (15x14, 20x20, 15x18, 16x16), so the
+		// size setting is a CAP, not a target: an icon already inside it is drawn 1:1 and
+		// keeps every pixel, and only the oversized ones (the prayer star and the run
+		// boot) shrink, nearest-neighbour so they stay hard-edged rather than smeared.
+		// pinning the number to the right edge instead was the old bug, it clipped the
+		// third digit of a 3-digit value off against the border.
 		BufferedImage icon = icon(orbChild);
 		String value = value(orbChild);
 		Font prev = g.getFont();
 		g.setFont(FontManager.getRunescapeSmallFont());
-		int tw = g.getFontMetrics().stringWidth(value);
 		int iw = 0;
 		if (icon != null)
 		{
-			iw = icon.getWidth();
-			g.drawImage(icon, x + 5, y + (h - icon.getHeight()) / 2, null);
+			int cap = config.orbIconSize();
+			int nw = icon.getWidth();
+			int nh = icon.getHeight();
+			if (nw <= cap && nh <= cap)
+			{
+				iw = nw;
+				g.drawImage(icon, x + ICON_PAD, y + (h - nh) / 2, null);
+			}
+			else
+			{
+				double s = Math.min(cap / (double) nw, cap / (double) nh);
+				iw = Math.max(1, (int) Math.round(nw * s));
+				int ih = Math.max(1, (int) Math.round(nh * s));
+				Object hint = g.getRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION);
+				g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+					java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+				g.drawImage(icon, x + ICON_PAD, y + (h - ih) / 2, iw, ih, null);
+				if (hint != null)
+				{
+					g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, hint);
+				}
+			}
 		}
-		// right-aligned, but never into the icon
-		int tx = Math.max(x + 5 + iw + 3, x + w - 8 - tw);
+		int tx = x + ICON_PAD + iw + ICON_GAP;
 		int ty = y + (h + g.getFontMetrics().getAscent()) / 2 - 2;
 		g.setColor(Color.BLACK);
 		g.drawString(value, tx + 1, ty + 1);

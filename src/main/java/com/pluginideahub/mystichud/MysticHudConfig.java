@@ -48,7 +48,7 @@ public interface MysticHudConfig extends Config
 		keyName = "mapOutline",
 		name = "Map outline",
 		description = "Draw a UI frame around the rectangular minimap",
-		position = 9
+		position = 10
 	)
 	default boolean mapOutline()
 	{
@@ -67,11 +67,27 @@ public interface MysticHudConfig extends Config
 		return 40;
 	}
 
+	// the four stock icons are authored at different sizes (15x14, 20x20, 15x18, 16x16),
+	// so this is a CAP rather than a target: anything already inside it is drawn 1:1 and
+	// stays pixel-exact, and only the oversized ones shrink. 18 is the largest that still
+	// leaves room for a 3-digit value in the narrowest slot.
+	@Range(min = 8, max = 18)
+	@ConfigItem(
+		keyName = "orbIconSize",
+		name = "Orb icon size",
+		description = "Largest an orb icon is drawn; smaller icons are left at native size",
+		position = 6
+	)
+	default int orbIconSize()
+	{
+		return 16;
+	}
+
 	@ConfigItem(
 		keyName = "showExtraOrbs",
 		name = "XP orb",
 		description = "Show the xp counter orb beside the minimap",
-		position = 6
+		position = 7
 	)
 	default boolean showExtraOrbs()
 	{
@@ -106,7 +122,7 @@ public interface MysticHudConfig extends Config
 		keyName = "showCompass",
 		name = "Compass",
 		description = "Show a small round compass over the minimap's top left corner",
-		position = 11
+		position = 12
 	)
 	default boolean showCompass()
 	{
@@ -117,7 +133,7 @@ public interface MysticHudConfig extends Config
 		keyName = "showWorldMap",
 		name = "World map orb",
 		description = "Show the world map orb in the minimap's bottom right corner",
-		position = 10
+		position = 11
 	)
 	default boolean showWorldMap()
 	{
@@ -128,7 +144,7 @@ public interface MysticHudConfig extends Config
 		keyName = "attachInventory",
 		name = "Attach to inventory",
 		description = "Glue the block flush onto the inventory panel so they read as one piece; snaps to the top right corner while the inventory is closed. Disables alt-drag.",
-		position = 7
+		position = 8
 	)
 	default boolean attachInventory()
 	{
@@ -139,7 +155,7 @@ public interface MysticHudConfig extends Config
 		keyName = "hideWhenClosed",
 		name = "Hide when inventory closed",
 		description = "Hide the minimap block entirely while no side panel is open",
-		position = 8
+		position = 9
 	)
 	default boolean hideWhenClosed()
 	{
