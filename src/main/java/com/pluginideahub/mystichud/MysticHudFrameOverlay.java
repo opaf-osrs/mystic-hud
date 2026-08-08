@@ -200,6 +200,18 @@ public class MysticHudFrameOverlay extends Overlay
 
 	private static final int TEXT_EDGE_PAD = 3; // right inset when the value is right-aligned
 
+	/**
+	 * Per-orb tweak to the value's x, on top of the Value X setting. The four icons share
+	 * a canvas size but not how much of it their art actually fills, so an identical gap
+	 * in pixels does not read as an identical gap: the prayer star's ink runs closer to
+	 * its right edge than the others and its number looked tighter for it. Taste, so it
+	 * lives here as a default rather than as a clamp on anything.
+	 */
+	private static int valueNudgeX(int orbChild)
+	{
+		return orbChild == MysticHudPlugin.PRAYER ? 1 : 0;
+	}
+
 	// deriving the font allocates, so it is cached rather than rebuilt four times a frame
 	private Font valueFont;
 	private int valueFontSize;
@@ -311,7 +323,7 @@ public class MysticHudFrameOverlay extends Overlay
 				tx = ix + iw + gap;
 				break;
 		}
-		tx += config.orbTextNudgeX();
+		tx += config.orbTextNudgeX() + valueNudgeX(orbChild);
 
 		// stacked centres the icon and value as a column; the rest centre each on the row.
 		// gap is left out of the centring here too, so widening it drops the value down
