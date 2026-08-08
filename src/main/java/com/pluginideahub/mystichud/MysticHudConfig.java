@@ -135,7 +135,7 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "orbTextAlign",
 		name = "Value position",
-		description = "Where the number sits. Stacked puts it under the icon instead of beside it, which is the only layout where a tall row buys you a bigger icon.",
+		description = "Where the number sits. Stacked puts it under the icon and spends the row's height on the icon. Over icon reserves it no space at all, which is the only way to fill the whole block with the icon.",
 		section = ORB_LAYOUT,
 		position = 6
 	)
@@ -309,6 +309,7 @@ public interface MysticHudConfig extends Config
 		AFTER_ICON,
 		RIGHT_EDGE,
 		CENTRED,
-		STACKED
+		STACKED,
+		OVER_ICON
 	}
 }

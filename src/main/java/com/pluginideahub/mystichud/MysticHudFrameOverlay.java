@@ -231,6 +231,7 @@ public class MysticHudFrameOverlay extends Overlay
 		int gap = icon != null ? config.orbTextGap() : 0;
 		MysticHudConfig.TextAlign align = config.orbTextAlign();
 		boolean stacked = align == MysticHudConfig.TextAlign.STACKED;
+		boolean over = align == MysticHudConfig.TextAlign.OVER_ICON;
 		int th = fm.getAscent();
 		int iw = 0;
 		int ih = 0;
@@ -244,7 +245,14 @@ public class MysticHudFrameOverlay extends Overlay
 			// or its centre the retreating edge read as the gap shoving it away. the gap
 			// moves the value and only the value; past the point where the value would
 			// leave the block it stops moving rather than the icon giving up size.
-			if (stacked)
+			if (over)
+			{
+				// the value is painted on top and reserves nothing, so the icon gets the
+				// whole block. the only way to go properly big at a normal row height,
+				// since every side-by-side layout is boxed in by the ~43px block width.
+				cap = Math.min(cap, Math.min(w - 2, vh - 2));
+			}
+			else if (stacked)
 			{
 				// stacked spends the row's HEIGHT on the icon, which is the axis that
 				// actually grows, so this is the only layout where a tall row buys a
@@ -271,6 +279,7 @@ public class MysticHudFrameOverlay extends Overlay
 		int tx;
 		switch (align)
 		{
+			case OVER_ICON:
 			case STACKED:
 				ix = x + (w - iw) / 2;
 				tx = x + (w - tw) / 2;
@@ -291,7 +300,7 @@ public class MysticHudFrameOverlay extends Overlay
 				tx = ix + iw + gap;
 				break;
 		}
-		if (!stacked)
+		if (!stacked && !over)
 		{
 			// the value runs out of block before the icon does; hold it at the edge
 			tx = Math.min(tx, x + w - TEXT_EDGE_PAD - tw);
@@ -303,7 +312,7 @@ public class MysticHudFrameOverlay extends Overlay
 		int top = y + (vh - (ih + th)) / 2;
 		if (icon != null)
 		{
-			int iy = (stacked ? top : y + (vh - ih) / 2) + config.orbIconNudgeY();
+			int iy = (stacked && !over ? top : y + (vh - ih) / 2) + config.orbIconNudgeY();
 			if (iw == icon.getWidth() && ih == icon.getHeight())
 			{
 				g.drawImage(icon, ix, iy, null);
@@ -323,9 +332,18 @@ public class MysticHudFrameOverlay extends Overlay
 
 		// no fudge on the baseline: the -2 that used to be here sat the value 2px above
 		// true centre, which is the other half of why the nudges differed by mode
-		int ty = (stacked ? Math.min(top + ih + gap + th, y + vh - 1) : y + (vh + th) / 2)
+		int ty = (stacked && !over ? Math.min(top + ih + gap + th, y + vh - 1) : y + (vh + th) / 2)
 			+ config.orbTextNudgeY();
 		g.setColor(Color.BLACK);
+		if (over)
+		{
+			// sitting on top of the icon, a single drop shadow does not hold the value
+			// apart from whatever is behind it; outline all four sides instead
+			g.drawString(value, tx - 1, ty);
+			g.drawString(value, tx + 1, ty);
+			g.drawString(value, tx, ty - 1);
+			g.drawString(value, tx, ty + 1);
+		}
 		g.drawString(value, tx + 1, ty + 1);
 		g.setColor(TEXT);
 		g.drawString(value, tx, ty);
