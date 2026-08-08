@@ -3,12 +3,21 @@ package com.pluginideahub.mystichud;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Range;
 
 @ConfigGroup(MysticHudConfig.GROUP)
 public interface MysticHudConfig extends Config
 {
 	String GROUP = "mystichud";
+
+	@ConfigSection(
+		name = "Orb block layout",
+		description = "Size and placement of the icon and the value inside each orb block",
+		position = 5,
+		closedByDefault = true
+	)
+	String ORB_LAYOUT = "orbLayout";
 
 	@ConfigItem(
 		keyName = "squareMinimap",
@@ -58,9 +67,10 @@ public interface MysticHudConfig extends Config
 	@Range(min = 24, max = 70)
 	@ConfigItem(
 		keyName = "orbRowHeight",
-		name = "Orb row height",
+		name = "Row height",
 		description = "Height of the four orb blocks",
-		position = 5
+		section = ORB_LAYOUT,
+		position = 1
 	)
 	default int orbRowHeight()
 	{
@@ -68,17 +78,107 @@ public interface MysticHudConfig extends Config
 	}
 
 	// the four stock icons are authored at different sizes (15x14, 20x20, 15x18, 16x16),
-	// so this is a CAP rather than a target: anything already inside it is drawn 1:1 and
-	// stays pixel-exact, and only the oversized ones shrink. 18 is the largest that still
-	// leaves room for a 3-digit value in the narrowest slot.
-	@Range(min = 8, max = 18)
+	// so by default this is a CAP rather than a target: anything already inside it is
+	// drawn 1:1 and stays pixel-exact, and only the oversized ones shrink. whatever the
+	// value, the draw clamps it to the block so a big icon can never outgrow a short row.
+	@Range(min = 6, max = 48)
 	@ConfigItem(
 		keyName = "orbIconSize",
-		name = "Orb icon size",
-		description = "Largest an orb icon is drawn; smaller icons are left at native size",
-		position = 6
+		name = "Icon size",
+		description = "Largest an orb icon is drawn. Icons already smaller than this keep their native size unless 'Scale icons up' is on.",
+		section = ORB_LAYOUT,
+		position = 2
 	)
 	default int orbIconSize()
+	{
+		return 16;
+	}
+
+	@ConfigItem(
+		keyName = "orbIconUpscale",
+		name = "Scale icons up",
+		description = "Also grow icons that are smaller than the icon size, for tall rows. Whole multiples of the native size (2x, 3x) stay sharpest.",
+		section = ORB_LAYOUT,
+		position = 3
+	)
+	default boolean orbIconUpscale()
+	{
+		return false;
+	}
+
+	@Range(min = 0, max = 24)
+	@ConfigItem(
+		keyName = "orbIconPadX",
+		name = "Icon left padding",
+		description = "Gap between the block's left edge and the icon",
+		section = ORB_LAYOUT,
+		position = 4
+	)
+	default int orbIconPadX()
+	{
+		return 3;
+	}
+
+	@Range(min = -20, max = 20)
+	@ConfigItem(
+		keyName = "orbIconNudgeY",
+		name = "Icon nudge Y",
+		description = "Shift the icon up or down from vertical centre",
+		section = ORB_LAYOUT,
+		position = 5
+	)
+	default int orbIconNudgeY()
+	{
+		return 0;
+	}
+
+	@ConfigItem(
+		keyName = "orbTextAlign",
+		name = "Value position",
+		description = "Where the number sits: straight after the icon, pinned to the right edge, or icon and number centred together as one group",
+		section = ORB_LAYOUT,
+		position = 6
+	)
+	default TextAlign orbTextAlign()
+	{
+		return TextAlign.AFTER_ICON;
+	}
+
+	@Range(min = 0, max = 24)
+	@ConfigItem(
+		keyName = "orbTextGap",
+		name = "Icon to value gap",
+		description = "Space between the icon and the number",
+		section = ORB_LAYOUT,
+		position = 7
+	)
+	default int orbTextGap()
+	{
+		return 3;
+	}
+
+	@Range(min = -20, max = 20)
+	@ConfigItem(
+		keyName = "orbTextNudgeY",
+		name = "Value nudge Y",
+		description = "Shift the number up or down from vertical centre",
+		section = ORB_LAYOUT,
+		position = 8
+	)
+	default int orbTextNudgeY()
+	{
+		return 0;
+	}
+
+	@Range(min = 8, max = 32)
+	@ConfigItem(
+		keyName = "orbFontSize",
+		name = "Value font size",
+		description = "Size of the number. 16 is the font's native size and the crispest; other sizes are interpolated.",
+		section = ORB_LAYOUT,
+		position = 9
+	)
+	default int orbFontSize()
 	{
 		return 16;
 	}
@@ -202,5 +302,12 @@ public interface MysticHudConfig extends Config
 		SPEC_PRAYER_RUN_HP,
 		HP_PRAYER_RUN_SPEC,
 		HP_PRAYER_SPEC_RUN
+	}
+
+	enum TextAlign
+	{
+		AFTER_ICON,
+		RIGHT_EDGE,
+		CENTRED
 	}
 }

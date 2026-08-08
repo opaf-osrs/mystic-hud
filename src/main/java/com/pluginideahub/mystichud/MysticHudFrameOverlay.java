@@ -3,6 +3,7 @@ package com.pluginideahub.mystichud;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.geom.AffineTransform;
@@ -168,8 +169,21 @@ public class MysticHudFrameOverlay extends Overlay
 		return null;
 	}
 
-	private static final int ICON_PAD = 3; // left inset of the icon inside its block
-	private static final int ICON_GAP = 3; // icon to number
+	private static final int TEXT_EDGE_PAD = 3; // right inset when the value is right-aligned
+
+	// deriving the font allocates, so it is cached rather than rebuilt four times a frame
+	private Font valueFont;
+	private int valueFontSize;
+
+	private Font valueFont(int size)
+	{
+		if (valueFont == null || valueFontSize != size)
+		{
+			valueFont = FontManager.getRunescapeSmallFont().deriveFont((float) size);
+			valueFontSize = size;
+		}
+		return valueFont;
+	}
 
 	private void block(Graphics2D g, int x, int y, int w, int h, int orbChild)
 	{
@@ -184,45 +198,79 @@ public class MysticHudFrameOverlay extends Overlay
 		g.setColor(EDGE);
 		g.drawRect(x, y, w - 1, h - 1);
 
-		// icon left, number immediately after it. the four stock icons are pixel art
-		// authored at different sizes and aspects (15x14, 20x20, 15x18, 16x16), so the
-		// size setting is a CAP, not a target: an icon already inside it is drawn 1:1 and
-		// keeps every pixel, and only the oversized ones (the prayer star and the run
-		// boot) shrink, nearest-neighbour so they stay hard-edged rather than smeared.
-		// pinning the number to the right edge instead was the old bug, it clipped the
-		// third digit of a 3-digit value off against the border.
+		// icon and value. the four stock icons are pixel art authored at different sizes
+		// and aspects (15x14, 20x20, 15x18, 16x16), so the size setting is a CAP rather
+		// than a target: an icon already inside it draws 1:1 and keeps every pixel, and
+		// only the oversized ones shrink, nearest-neighbour so they stay hard-edged
+		// rather than smeared. the cap is clamped to the block too, so a big icon on a
+		// short row can never spill past the edges.
 		BufferedImage icon = icon(orbChild);
 		String value = value(orbChild);
 		Font prev = g.getFont();
-		g.setFont(FontManager.getRunescapeSmallFont());
+		g.setFont(valueFont(config.orbFontSize()));
+		FontMetrics fm = g.getFontMetrics();
+		int tw = fm.stringWidth(value);
+
+		int padX = config.orbIconPadX();
+		int gap = icon != null ? config.orbTextGap() : 0;
 		int iw = 0;
+		int ih = 0;
 		if (icon != null)
 		{
-			int cap = config.orbIconSize();
 			int nw = icon.getWidth();
 			int nh = icon.getHeight();
-			if (nw <= cap && nh <= cap)
+			// the block is a fixed ~43px wide however tall the row gets, so a large icon
+			// size will run out of width long before it runs out of height. the value
+			// wins that fight: reserve its width first and let the icon have the rest,
+			// otherwise a big icon silently clips the last digit off a 3-digit number.
+			int room = w - padX - gap - tw - TEXT_EDGE_PAD;
+			int cap = Math.min(config.orbIconSize(), Math.min(h - 2, Math.max(6, room)));
+			double s = Math.min(cap / (double) nw, cap / (double) nh);
+			boolean resize = s < 1 || config.orbIconUpscale();
+			iw = resize ? Math.max(1, (int) Math.round(nw * s)) : nw;
+			ih = resize ? Math.max(1, (int) Math.round(nh * s)) : nh;
+		}
+
+		int ix;
+		int tx;
+		switch (config.orbTextAlign())
+		{
+			case CENTRED:
+				ix = x + Math.max(padX, (w - (iw + gap + tw)) / 2);
+				tx = ix + iw + gap;
+				break;
+			case RIGHT_EDGE:
+				// never let the right-alignment pull the value back over the icon
+				ix = x + padX;
+				tx = Math.max(ix + iw + gap, x + w - TEXT_EDGE_PAD - tw);
+				break;
+			default:
+				ix = x + padX;
+				tx = ix + iw + gap;
+				break;
+		}
+
+		if (icon != null)
+		{
+			int iy = y + (h - ih) / 2 + config.orbIconNudgeY();
+			if (iw == icon.getWidth() && ih == icon.getHeight())
 			{
-				iw = nw;
-				g.drawImage(icon, x + ICON_PAD, y + (h - nh) / 2, null);
+				g.drawImage(icon, ix, iy, null);
 			}
 			else
 			{
-				double s = Math.min(cap / (double) nw, cap / (double) nh);
-				iw = Math.max(1, (int) Math.round(nw * s));
-				int ih = Math.max(1, (int) Math.round(nh * s));
 				Object hint = g.getRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION);
 				g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
 					java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-				g.drawImage(icon, x + ICON_PAD, y + (h - ih) / 2, iw, ih, null);
+				g.drawImage(icon, ix, iy, iw, ih, null);
 				if (hint != null)
 				{
 					g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, hint);
 				}
 			}
 		}
-		int tx = x + ICON_PAD + iw + ICON_GAP;
-		int ty = y + (h + g.getFontMetrics().getAscent()) / 2 - 2;
+
+		int ty = y + (h + fm.getAscent()) / 2 - 2 + config.orbTextNudgeY();
 		g.setColor(Color.BLACK);
 		g.drawString(value, tx + 1, ty + 1);
 		g.setColor(TEXT);
