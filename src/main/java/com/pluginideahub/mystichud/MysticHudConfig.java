@@ -85,7 +85,7 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "orbIconSize",
 		name = "Icon size",
-		description = "Largest an orb icon is drawn. 20 is the biggest native size, so at 20 nothing is resized at all. Going above it needs 'Scale icons up', and needs the stacked value position to have anywhere to grow.",
+		description = "Largest an orb icon is drawn. Set it to the icons' own native size and nothing is resized at all; a resource pack's icons are usually bigger than stock. Side by side layouts cap this at whatever width the value leaves over, so 'Over icon' is the one that can fill the block.",
 		section = ORB_LAYOUT,
 		position = 2
 	)

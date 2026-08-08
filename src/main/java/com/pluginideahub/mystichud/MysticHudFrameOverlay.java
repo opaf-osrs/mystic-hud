@@ -199,9 +199,36 @@ public class MysticHudFrameOverlay extends Overlay
 	}
 
 	private static final int TEXT_EDGE_PAD = 3; // right inset when the value is right-aligned
-	// the prayer star, biggest of the four stock icons. above this an icon size can only
-	// have been asked for to make things bigger
-	private static final int MAX_NATIVE_ICON = 20;
+	// fallback until the icons have loaded: the prayer star, biggest of the four STOCK
+	// icons. a resource pack's are their own sizes, which is why this is not the answer
+	private static final int STOCK_MAX_ICON = 20;
+	private int maxNativeIcon = -1;
+
+	/**
+	 * The biggest of the four icons at native size. An icon size above this can only have
+	 * been asked for to make things bigger, so the upscale toggle stops being required.
+	 * Measured off the loaded art rather than assumed: Mystic's pack ships 26px icons
+	 * where stock is 20, and a hardcoded 20 silently caps a pack's icons below native.
+	 */
+	private int maxNativeIcon()
+	{
+		if (maxNativeIcon < 0)
+		{
+			int max = 0;
+			for (int child : new int[]{MysticHudPlugin.HP, MysticHudPlugin.PRAYER,
+				MysticHudPlugin.RUN, MysticHudPlugin.SPEC})
+			{
+				BufferedImage i = icon(child);
+				if (i == null)
+				{
+					return STOCK_MAX_ICON; // still loading, do not cache a wrong answer
+				}
+				max = Math.max(max, Math.max(i.getWidth(), i.getHeight()));
+			}
+			maxNativeIcon = max;
+		}
+		return maxNativeIcon;
+	}
 
 	// deriving the font allocates, so it is cached rather than rebuilt four times a frame
 	private Font valueFont;
@@ -304,13 +331,14 @@ public class MysticHudFrameOverlay extends Overlay
 			// that is where leaving an icon alone keeps it pixel-exact.
 			boolean resize = s < 1
 				|| config.orbIconUpscale()
-				|| config.orbIconSize() > MAX_NATIVE_ICON;
+				|| config.orbIconSize() > maxNativeIcon();
 			iw = resize ? Math.max(1, (int) Math.round(nw * s)) : nw;
 			ih = resize ? Math.max(1, (int) Math.round(nh * s)) : nh;
 			if (config.orbDebug())
 			{
 				debugGeom = "slot" + w + " row" + h + " cov" + cover + " vh" + vh;
 				debugIcon = "set" + config.orbIconSize() + " cap" + cap
+					+ " nat" + maxNativeIcon()
 					+ " " + nw + "x" + nh + ">" + iw + "x" + ih
 					+ (resize ? "" : " NORESIZE");
 			}
