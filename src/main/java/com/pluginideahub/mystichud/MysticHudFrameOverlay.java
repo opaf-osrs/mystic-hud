@@ -179,6 +179,9 @@ public class MysticHudFrameOverlay extends Overlay
 	}
 
 	private static final int TEXT_EDGE_PAD = 3; // right inset when the value is right-aligned
+	// the prayer star, biggest of the four stock icons. above this an icon size can only
+	// have been asked for to make things bigger
+	private static final int MAX_NATIVE_ICON = 20;
 
 	// deriving the font allocates, so it is cached rather than rebuilt four times a frame
 	private Font valueFont;
@@ -270,7 +273,13 @@ public class MysticHudFrameOverlay extends Overlay
 				cap = Math.min(cap, Math.min(vh - 2, Math.max(6, room)));
 			}
 			double s = Math.min(cap / (double) nw, cap / (double) nh);
-			boolean resize = s < 1 || config.orbIconUpscale();
+			// asking for more than the biggest native icon can only mean "grow them", so
+			// the slider acts on its own up there rather than sitting dead until the
+			// upscale toggle is found. below native the toggle still decides, because
+			// that is where leaving an icon alone keeps it pixel-exact.
+			boolean resize = s < 1
+				|| config.orbIconUpscale()
+				|| config.orbIconSize() > MAX_NATIVE_ICON;
 			iw = resize ? Math.max(1, (int) Math.round(nw * s)) : nw;
 			ih = resize ? Math.max(1, (int) Math.round(nh * s)) : nh;
 		}
