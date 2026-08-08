@@ -156,13 +156,29 @@ public interface MysticHudConfig extends Config
 		return 0;
 	}
 
+	// the four icons share a canvas size but not how much of it their art fills, so an
+	// identical gap in pixels does not read as an identical gap. this rides on top of
+	// Value X for the prayer orb alone.
+	@Range(min = -48, max = 48)
+	@ConfigItem(
+		keyName = "orbPrayerValueX",
+		name = "Prayer value X",
+		description = "Extra sideways shift for the prayer number only, on top of Value X. Its icon's art sits nearer the edge of its canvas than the others, so the same gap looks tighter.",
+		section = ORB_LAYOUT,
+		position = 9
+	)
+	default int orbPrayerValueX()
+	{
+		return 1;
+	}
+
 	@Range(min = -48, max = 48)
 	@ConfigItem(
 		keyName = "orbTextNudgeY",
 		name = "Value Y",
 		description = "Shift the number up or down from vertical centre",
 		section = ORB_LAYOUT,
-		position = 9
+		position = 10
 	)
 	default int orbTextNudgeY()
 	{
@@ -175,7 +191,7 @@ public interface MysticHudConfig extends Config
 		name = "Value font size",
 		description = "Size of the number. 16 is the font's native size and the crispest; other sizes are interpolated.",
 		section = ORB_LAYOUT,
-		position = 10
+		position = 11
 	)
 	default int orbFontSize()
 	{
@@ -187,7 +203,7 @@ public interface MysticHudConfig extends Config
 		name = "Debug readout",
 		description = "Paint the real numbers the layout is working from over the minimap, for when a setting does not appear to do anything",
 		section = ORB_LAYOUT,
-		position = 11
+		position = 12
 	)
 	default boolean orbDebug()
 	{

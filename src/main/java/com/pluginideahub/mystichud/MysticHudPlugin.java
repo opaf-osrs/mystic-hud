@@ -124,7 +124,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b43";
+	static final String BUILD_TAG = "b44";
 
 	@Inject
 	private Client client;
