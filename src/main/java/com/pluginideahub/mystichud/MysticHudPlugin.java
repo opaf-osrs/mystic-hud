@@ -124,7 +124,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b44";
+	static final String BUILD_TAG = "b45";
 
 	@Inject
 	private Client client;
@@ -390,10 +390,11 @@ public class MysticHudPlugin extends Plugin
 
 	private int cfgMapH()
 	{
-		// the engine ALWAYS draws 152 tall (native), anchored to the container bottom:
-		// a 132 container left exactly 20px of live map above the frame. the container
-		// must be exactly 152 so draw, container and frame coincide.
-		return 152;
+		// the engine ALWAYS draws 152 tall (native), anchored to the container bottom, so
+		// below 152 the difference spills out as live map above the frame rather than
+		// cropping. exposed anyway: the spill is a look to judge, not a crash, and 152
+		// is still the only height where draw, container and frame coincide exactly.
+		return config.mapHeight();
 	}
 
 	int[] orbChildren()

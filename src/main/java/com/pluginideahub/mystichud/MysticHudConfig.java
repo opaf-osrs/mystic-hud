@@ -64,6 +64,19 @@ public interface MysticHudConfig extends Config
 		return true;
 	}
 
+	@Range(min = 132, max = 152)
+	@ConfigItem(
+		keyName = "mapHeight",
+		name = "Map height",
+		description = "Height of the minimap. The engine always draws 152 tall anchored to the bottom, so anything under 152 spills that much live map out above the frame instead of cropping.",
+		section = ORB_LAYOUT,
+		position = 0
+	)
+	default int mapHeight()
+	{
+		return 152;
+	}
+
 	@Range(min = 24, max = 120)
 	@ConfigItem(
 		keyName = "orbRowHeight",
