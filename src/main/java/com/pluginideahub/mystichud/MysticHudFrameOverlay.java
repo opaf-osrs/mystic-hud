@@ -167,17 +167,17 @@ public class MysticHudFrameOverlay extends Overlay
 			compass(g, cb.x, cb.y);
 		}
 
-		// build marker: tiny tag at the map's bottom-left. if the tag on screen does not
-		// match the latest build number, the client is running stale code and NOTHING
-		// else is worth debugging until it is relaunched
-		g.setFont(FontManager.getRunescapeSmallFont());
-		g.setColor(Color.BLACK);
-		g.drawString(MysticHudPlugin.BUILD_TAG, mb.x + 9, mb.y + mb.height - 4);
-		g.setColor(Color.WHITE);
-		g.drawString(MysticHudPlugin.BUILD_TAG, mb.x + 8, mb.y + mb.height - 5);
-
 		if (config.orbDebug())
 		{
+			// build marker: tiny tag at the map's bottom-left. if the tag on screen does
+			// not match the latest build number, the client is running stale code and
+			// NOTHING else is worth debugging until it is relaunched
+			g.setFont(FontManager.getRunescapeSmallFont());
+			g.setColor(Color.BLACK);
+			g.drawString(MysticHudPlugin.BUILD_TAG, mb.x + 9, mb.y + mb.height - 4);
+			g.setColor(Color.WHITE);
+			g.drawString(MysticHudPlugin.BUILD_TAG, mb.x + 8, mb.y + mb.height - 5);
+
 			// the layout's own numbers, so a slider that looks stuck can be read rather
 			// than guessed at. align first: it is the setting that caps the icon.
 			String[] lines = {
