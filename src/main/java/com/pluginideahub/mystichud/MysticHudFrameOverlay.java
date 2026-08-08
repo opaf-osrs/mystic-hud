@@ -98,6 +98,20 @@ public class MysticHudFrameOverlay extends Overlay
 		int rowY = mb.y + mb.height + MysticHudPlugin.ROW_GAP;
 		int rowH = plugin.rowH();
 
+		Widget inv = client.getWidget(MysticHudPlugin.TOPLEVEL << 16 | MysticHudPlugin.INV_PANEL);
+		boolean bridged = config.attachInventory()
+			&& inv != null && !inv.isHidden() && inv.getHeight() > 0;
+		BufferedImage bar = trimmed(sprite(STEEL_H));
+
+		// free mode closes the frame on the row's bottom edge, and the band is drawn
+		// INSIDE the rect, so it covers the last few pixels of every block. attached mode
+		// carries that band on down to the inventory instead and covers nothing. the
+		// blocks are the same height in both, but not the same VISIBLE height, so the
+		// contents centre on what is actually on show. without this the same icon and
+		// value nudges do not hold across the two modes. taken from the art rather than
+		// hardcoded, because the pack's bar trims to a different thickness than stock.
+		int rowCover = !bridged && config.mapOutline() && bar != null ? bar.getHeight() : 0;
+
 		if (config.drawBlocks())
 		{
 			g.setColor(EDGE);
@@ -105,7 +119,6 @@ public class MysticHudFrameOverlay extends Overlay
 
 			// bar under the minimap, and vertical bars between the blocks: the same
 			// frame art dividing every section
-			BufferedImage bar = trimmed(sprite(STEEL_H));
 			if (bar != null)
 			{
 				tileH(g, bar, mb.x + 6, mb.x + mb.width - 6, mb.y + mb.height);
@@ -117,7 +130,7 @@ public class MysticHudFrameOverlay extends Overlay
 			for (int i = 0; i < 4; i++)
 			{
 				int bx = mb.x + inset + i * (slot + MysticHudPlugin.BLOCK_GAP);
-				block(g, bx, rowY, slot, rowH, order[i]);
+				block(g, bx, rowY, slot, rowH, rowCover, order[i]);
 				if (bar != null && i < 3)
 				{
 					tileV(g, rotated(bar), bx + slot, rowY, rowY + rowH);
@@ -125,9 +138,6 @@ public class MysticHudFrameOverlay extends Overlay
 			}
 		}
 
-		Widget inv = client.getWidget(MysticHudPlugin.TOPLEVEL << 16 | MysticHudPlugin.INV_PANEL);
-		boolean bridged = config.attachInventory()
-			&& inv != null && !inv.isHidden() && inv.getHeight() > 0;
 		if (bridged)
 		{
 			// ONE panel: the seam band (row bottom to just past the inventory's top
@@ -139,7 +149,6 @@ public class MysticHudFrameOverlay extends Overlay
 			// remaining sliver down to the inventory's interior is filled panel-dark
 			g.setColor(PANEL);
 			g.fillRect(mb.x + 6, rowBottom, mb.width - 12, Math.max(0, ib.y + 8 - rowBottom));
-			BufferedImage bar = trimmed(sprite(STEEL_H));
 			if (bar != null)
 			{
 				tileH(g, bar, mb.x + 6, mb.x + mb.width - 6, rowBottom);
@@ -185,8 +194,15 @@ public class MysticHudFrameOverlay extends Overlay
 		return valueFont;
 	}
 
-	private void block(Graphics2D g, int x, int y, int w, int h, int orbChild)
+	/**
+	 * @param h     the block's full height; the fill and border use all of it
+	 * @param cover pixels of the block's bottom hidden under the frame band, so the icon
+	 *              and value centre on the visible part instead of sliding under it
+	 */
+	private void block(Graphics2D g, int x, int y, int w, int h, int cover, int orbChild)
 	{
+		int vh = Math.max(8, h - cover);
+
 		Color c = orbColor(orbChild);
 		g.setColor(new Color(c.getRed() / 3, c.getGreen() / 3, c.getBlue() / 3));
 		g.fillRect(x, y, w, h);
@@ -228,7 +244,7 @@ public class MysticHudFrameOverlay extends Overlay
 				// stacked spends the row's HEIGHT on the icon, which is the axis that
 				// actually grows, so this is the only layout where a tall row buys a
 				// bigger icon
-				cap = Math.min(cap, Math.min(w - 2, Math.max(6, h - th - gap - 2)));
+				cap = Math.min(cap, Math.min(w - 2, Math.max(6, vh - th - gap - 2)));
 			}
 			else
 			{
@@ -238,7 +254,7 @@ public class MysticHudFrameOverlay extends Overlay
 				// the last digit off. measured on the WIDEST value a block can show, not
 				// the current one, so all four agree and nothing resizes as stats move.
 				int room = w - padX - gap - fm.stringWidth("000") - TEXT_EDGE_PAD;
-				cap = Math.min(cap, Math.min(h - 2, Math.max(6, room)));
+				cap = Math.min(cap, Math.min(vh - 2, Math.max(6, room)));
 			}
 			double s = Math.min(cap / (double) nw, cap / (double) nh);
 			boolean resize = s < 1 || config.orbIconUpscale();
@@ -270,10 +286,10 @@ public class MysticHudFrameOverlay extends Overlay
 		}
 
 		// stacked centres the icon and value as a column; the rest centre each on the row
-		int top = y + (h - (ih + gap + th)) / 2;
+		int top = y + (vh - (ih + gap + th)) / 2;
 		if (icon != null)
 		{
-			int iy = (stacked ? top : y + (h - ih) / 2) + config.orbIconNudgeY();
+			int iy = (stacked ? top : y + (vh - ih) / 2) + config.orbIconNudgeY();
 			if (iw == icon.getWidth() && ih == icon.getHeight())
 			{
 				g.drawImage(icon, ix, iy, null);
@@ -291,7 +307,9 @@ public class MysticHudFrameOverlay extends Overlay
 			}
 		}
 
-		int ty = (stacked ? top + ih + gap + th : y + (h + th) / 2 - 2)
+		// no fudge on the baseline: the -2 that used to be here sat the value 2px above
+		// true centre, which is the other half of why the nudges differed by mode
+		int ty = (stacked ? top + ih + gap + th : y + (vh + th) / 2)
 			+ config.orbTextNudgeY();
 		g.setColor(Color.BLACK);
 		g.drawString(value, tx + 1, ty + 1);
