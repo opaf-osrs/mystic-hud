@@ -1,11 +1,15 @@
-# Finds a JDK 11 or newer that is already installed but not on PATH and has no
+# Finds a Java 11 or newer that is already installed but not on PATH and has no
 # JAVA_HOME pointing at it, which is the normal state after someone installs Java
 # by hand. Prints the folder to stdout and exits 0, or prints nothing and exits 1.
 #
-# Looks for bin\javac.exe rather than java.exe on purpose: gradle has to compile,
-# and a bare JRE (the one the RuneLite launcher ships, for instance) cannot.
+# By default it insists on bin\javac.exe: gradle has to compile, and a bare JRE
+# cannot. Pass -RuntimeOnly to accept bin\java.exe as well, which is all that is
+# needed to start the packaged jar.
+
+param([switch]$RuntimeOnly)
 
 $ErrorActionPreference = 'SilentlyContinue'
+$needle = if ($RuntimeOnly) { 'bin\java.exe' } else { 'bin\javac.exe' }
 
 $roots = @(
 	$env:ProgramFiles,
@@ -37,7 +41,7 @@ $regHomes = foreach ($key in @(
 $found = @()
 foreach ($path in @($dirs.FullName) + @($regHomes)) {
 	if (-not $path) { continue }
-	if (-not (Test-Path (Join-Path $path 'bin\javac.exe'))) { continue }
+	if (-not (Test-Path (Join-Path $path $needle))) { continue }
 
 	# the release file carries the version, which beats launching javac for every hit
 	$ver = $null

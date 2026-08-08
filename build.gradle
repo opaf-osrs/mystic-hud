@@ -1,5 +1,8 @@
 plugins {
 	id 'java'
+	// only here to produce the standalone jar handed to the client. the plugin itself
+	// keeps every runtime dependency out, same as a hub plugin would.
+	id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 repositories {
@@ -39,4 +42,25 @@ tasks.register('run', JavaExec) {
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = project.findProperty('mainClass') ?: pluginMainClass
 	enableAssertions = true
+}
+
+// one runnable jar with the client and the plugin inside, so it goes to whoever is
+// using it as a single file they start with `java -jar`. no repo, no gradle, no JDK
+// on their side: a plain Java runtime is enough to run it.
+shadowJar {
+	archiveBaseName = 'mystic-hud'
+	archiveClassifier = ''
+	archiveVersion = ''
+	// the client is compileOnly for the plugin itself, so pull the runtime side from
+	// the test configuration, which is where the real client lives
+	configurations = [project.configurations.testRuntimeClasspath]
+	from sourceSets.test.output
+	manifest {
+		attributes 'Main-Class': pluginMainClass
+	}
+	// the client's dependencies are signed; keeping their signatures in a repacked jar
+	// makes the JVM refuse to load them
+	exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/INDEX.LIST'
+	exclude 'module-info.class', 'META-INF/versions/*/module-info.class'
+	mergeServiceFiles()
 }
