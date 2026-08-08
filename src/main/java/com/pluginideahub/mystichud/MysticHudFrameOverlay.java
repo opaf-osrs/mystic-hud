@@ -181,8 +181,13 @@ public class MysticHudFrameOverlay extends Overlay
 		g.setColor(EDGE);
 		g.drawRect(x, y, w - 1, h - 1);
 
-		// icon left (scaled down so icon and 3-digit numbers can never collide in a
-		// ~43px slot), number right, pulled off the border
+		// icon left at its NATIVE size, number right, pulled off the border. these are
+		// pixel art authored at 14..20px for the stock orbs and the four differ in both
+		// size and aspect (15x14, 20x20, 15x18, 16x16), so normalising them onto a common
+		// height meant a non-integer rescale on every one of them: the heart lost its
+		// white cross and the swords smeared. drawing 1:1 is the only way they stay sharp,
+		// and the text guard below already stops a 20px icon colliding with a 3-digit
+		// number in the ~43px slot.
 		BufferedImage icon = icon(orbChild);
 		String value = value(orbChild);
 		Font prev = g.getFont();
@@ -191,16 +196,8 @@ public class MysticHudFrameOverlay extends Overlay
 		int iw = 0;
 		if (icon != null)
 		{
-			int ih = 12;
-			iw = Math.max(1, icon.getWidth() * ih / icon.getHeight());
-			Object hint = g.getRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION);
-			g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
-				java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-			g.drawImage(icon, x + 5, y + (h - ih) / 2, iw, ih, null);
-			if (hint != null)
-			{
-				g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, hint);
-			}
+			iw = icon.getWidth();
+			g.drawImage(icon, x + 5, y + (h - icon.getHeight()) / 2, null);
 		}
 		// right-aligned, but never into the icon
 		int tx = Math.max(x + 5 + iw + 3, x + w - 8 - tw);
