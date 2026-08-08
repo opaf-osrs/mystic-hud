@@ -175,6 +175,26 @@ public class MysticHudFrameOverlay extends Overlay
 		g.drawString(MysticHudPlugin.BUILD_TAG, mb.x + 9, mb.y + mb.height - 4);
 		g.setColor(Color.WHITE);
 		g.drawString(MysticHudPlugin.BUILD_TAG, mb.x + 8, mb.y + mb.height - 5);
+
+		if (config.orbDebug())
+		{
+			// the layout's own numbers, so a slider that looks stuck can be read rather
+			// than guessed at. align first: it is the setting that caps the icon.
+			String[] lines = {
+				config.orbTextAlign().name(),
+				debugGeom,
+				debugIcon,
+			};
+			int ly = mb.y + 14;
+			for (String line : lines)
+			{
+				g.setColor(Color.BLACK);
+				g.drawString(line, mb.x + 41, ly + 1);
+				g.setColor(Color.WHITE);
+				g.drawString(line, mb.x + 40, ly);
+				ly += 10;
+			}
+		}
 		return null;
 	}
 
@@ -186,6 +206,11 @@ public class MysticHudFrameOverlay extends Overlay
 	// deriving the font allocates, so it is cached rather than rebuilt four times a frame
 	private Font valueFont;
 	private int valueFontSize;
+
+	// what the last block actually laid out, for the debug readout. guessing at why a
+	// slider looks stuck is slower than reading the numbers off the screen.
+	private String debugGeom = "";
+	private String debugIcon = "";
 
 	private Font valueFont(int size)
 	{
@@ -282,6 +307,13 @@ public class MysticHudFrameOverlay extends Overlay
 				|| config.orbIconSize() > MAX_NATIVE_ICON;
 			iw = resize ? Math.max(1, (int) Math.round(nw * s)) : nw;
 			ih = resize ? Math.max(1, (int) Math.round(nh * s)) : nh;
+			if (config.orbDebug())
+			{
+				debugGeom = "slot" + w + " row" + h + " cov" + cover + " vh" + vh;
+				debugIcon = "set" + config.orbIconSize() + " cap" + cap
+					+ " " + nw + "x" + nh + ">" + iw + "x" + ih
+					+ (resize ? "" : " NORESIZE");
+			}
 		}
 
 		int ix;

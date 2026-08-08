@@ -184,6 +184,18 @@ public interface MysticHudConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "orbDebug",
+		name = "Debug readout",
+		description = "Paint the real numbers the layout is working from over the minimap, for when a setting does not appear to do anything",
+		section = ORB_LAYOUT,
+		position = 10
+	)
+	default boolean orbDebug()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "showExtraOrbs",
 		name = "XP orb",
 		description = "Show the xp counter orb beside the minimap",
