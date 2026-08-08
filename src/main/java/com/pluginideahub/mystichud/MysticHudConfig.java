@@ -64,7 +64,7 @@ public interface MysticHudConfig extends Config
 		return true;
 	}
 
-	@Range(min = 24, max = 70)
+	@Range(min = 24, max = 120)
 	@ConfigItem(
 		keyName = "orbRowHeight",
 		name = "Row height",
@@ -77,40 +77,26 @@ public interface MysticHudConfig extends Config
 		return 40;
 	}
 
-	// the four stock icons are authored at different sizes (15x14, 20x20, 15x18, 16x16),
-	// so by default this is a CAP rather than a target: anything already inside it is
-	// drawn 1:1 and stays pixel-exact, and only the oversized ones shrink. whatever the
-	// value, the draw clamps it to the block so a big icon can never outgrow a short row.
-	@Range(min = 6, max = 48)
+	// literal, not a cap: whatever is set here is the size drawn. nothing clamps it to
+	// the block, so it will happily overflow or collide if that is what is asked for.
+	@Range(max = 64)
 	@ConfigItem(
 		keyName = "orbIconSize",
 		name = "Icon size",
-		description = "Largest an orb icon is drawn. Set it to the icons' own native size and nothing is resized at all; a resource pack's icons are usually bigger than stock. Side by side layouts cap this at whatever width the value leaves over, so 'Over icon' is the one that can fill the block.",
+		description = "Exact size the icon is drawn at, in pixels. 0 leaves it at its native size, which is the only setting that keeps it pixel-perfect. Nothing clamps this, so it can overflow the block.",
 		section = ORB_LAYOUT,
 		position = 2
 	)
 	default int orbIconSize()
 	{
-		return 20;
+		return 0;
 	}
 
-	@ConfigItem(
-		keyName = "orbIconUpscale",
-		name = "Scale icons up",
-		description = "Also grow icons that are smaller than the icon size, for tall rows. Whole multiples of the native size (2x, 3x) stay sharpest.",
-		section = ORB_LAYOUT,
-		position = 3
-	)
-	default boolean orbIconUpscale()
-	{
-		return false;
-	}
-
-	@Range(min = 0, max = 24)
+	@Range(min = -32, max = 48)
 	@ConfigItem(
 		keyName = "orbIconPadX",
-		name = "Icon left padding",
-		description = "Gap between the block's left edge and the icon",
+		name = "Icon X",
+		description = "Icon distance from the block's left edge. Negative pushes it off the left.",
 		section = ORB_LAYOUT,
 		position = 4
 	)
@@ -119,10 +105,10 @@ public interface MysticHudConfig extends Config
 		return 3;
 	}
 
-	@Range(min = -20, max = 20)
+	@Range(min = -48, max = 48)
 	@ConfigItem(
 		keyName = "orbIconNudgeY",
-		name = "Icon nudge Y",
+		name = "Icon Y",
 		description = "Shift the icon up or down from vertical centre",
 		section = ORB_LAYOUT,
 		position = 5
@@ -144,11 +130,11 @@ public interface MysticHudConfig extends Config
 		return TextAlign.AFTER_ICON;
 	}
 
-	@Range(min = 0, max = 24)
+	@Range(min = -48, max = 48)
 	@ConfigItem(
 		keyName = "orbTextGap",
 		name = "Icon to value gap",
-		description = "Space between the icon and the number",
+		description = "Space between the icon and the number. Negative overlaps them.",
 		section = ORB_LAYOUT,
 		position = 7
 	)
@@ -157,26 +143,39 @@ public interface MysticHudConfig extends Config
 		return 3;
 	}
 
-	@Range(min = -20, max = 20)
+	@Range(min = -48, max = 48)
 	@ConfigItem(
-		keyName = "orbTextNudgeY",
-		name = "Value nudge Y",
-		description = "Shift the number up or down from vertical centre",
+		keyName = "orbTextNudgeX",
+		name = "Value X",
+		description = "Shift the number left or right from wherever the value position put it",
 		section = ORB_LAYOUT,
 		position = 8
+	)
+	default int orbTextNudgeX()
+	{
+		return 0;
+	}
+
+	@Range(min = -48, max = 48)
+	@ConfigItem(
+		keyName = "orbTextNudgeY",
+		name = "Value Y",
+		description = "Shift the number up or down from vertical centre",
+		section = ORB_LAYOUT,
+		position = 9
 	)
 	default int orbTextNudgeY()
 	{
 		return 0;
 	}
 
-	@Range(min = 8, max = 32)
+	@Range(min = 6, max = 40)
 	@ConfigItem(
 		keyName = "orbFontSize",
 		name = "Value font size",
 		description = "Size of the number. 16 is the font's native size and the crispest; other sizes are interpolated.",
 		section = ORB_LAYOUT,
-		position = 9
+		position = 10
 	)
 	default int orbFontSize()
 	{
@@ -188,7 +187,7 @@ public interface MysticHudConfig extends Config
 		name = "Debug readout",
 		description = "Paint the real numbers the layout is working from over the minimap, for when a setting does not appear to do anything",
 		section = ORB_LAYOUT,
-		position = 10
+		position = 11
 	)
 	default boolean orbDebug()
 	{

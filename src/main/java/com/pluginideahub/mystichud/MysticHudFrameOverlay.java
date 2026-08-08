@@ -199,36 +199,6 @@ public class MysticHudFrameOverlay extends Overlay
 	}
 
 	private static final int TEXT_EDGE_PAD = 3; // right inset when the value is right-aligned
-	// fallback until the icons have loaded: the prayer star, biggest of the four STOCK
-	// icons. a resource pack's are their own sizes, which is why this is not the answer
-	private static final int STOCK_MAX_ICON = 20;
-	private int maxNativeIcon = -1;
-
-	/**
-	 * The biggest of the four icons at native size. An icon size above this can only have
-	 * been asked for to make things bigger, so the upscale toggle stops being required.
-	 * Measured off the loaded art rather than assumed: Mystic's pack ships 26px icons
-	 * where stock is 20, and a hardcoded 20 silently caps a pack's icons below native.
-	 */
-	private int maxNativeIcon()
-	{
-		if (maxNativeIcon < 0)
-		{
-			int max = 0;
-			for (int child : new int[]{MysticHudPlugin.HP, MysticHudPlugin.PRAYER,
-				MysticHudPlugin.RUN, MysticHudPlugin.SPEC})
-			{
-				BufferedImage i = icon(child);
-				if (i == null)
-				{
-					return STOCK_MAX_ICON; // still loading, do not cache a wrong answer
-				}
-				max = Math.max(max, Math.max(i.getWidth(), i.getHeight()));
-			}
-			maxNativeIcon = max;
-		}
-		return maxNativeIcon;
-	}
 
 	// deriving the font allocates, so it is cached rather than rebuilt four times a frame
 	private Font valueFont;
@@ -294,53 +264,26 @@ public class MysticHudFrameOverlay extends Overlay
 		{
 			int nw = icon.getWidth();
 			int nh = icon.getHeight();
-			int cap = config.orbIconSize();
-			// NOTHING here may depend on the gap. it used to be part of both budgets, so
-			// widening the gap shrank the icon, and since the icon is anchored on its left
-			// or its centre the retreating edge read as the gap shoving it away. the gap
-			// moves the value and only the value; past the point where the value would
-			// leave the block it stops moving rather than the icon giving up size.
-			if (over)
+			// the size setting is LITERAL. nothing here clamps it to the block, to the
+			// row, or to the space the value wants: every one of those rails ended up
+			// silently overriding a number that had been set on purpose, which is worse
+			// than letting a bad number look bad. 0 means leave the art alone.
+			int size = config.orbIconSize();
+			if (size <= 0)
 			{
-				// the value is painted on top and reserves nothing, so the icon gets the
-				// whole block. the only way to go properly big at a normal row height,
-				// since every side-by-side layout is boxed in by the ~43px block width.
-				cap = Math.min(cap, Math.min(w - 2, vh - 2));
-			}
-			else if (stacked)
-			{
-				// stacked spends the row's HEIGHT on the icon, which is the axis that
-				// actually grows, so this is the only layout where a tall row buys a
-				// bigger icon
-				cap = Math.min(cap, Math.min(w - 2, Math.max(6, vh - th - 2)));
+				iw = nw;
+				ih = nh;
 			}
 			else
 			{
-				// side by side the block is a fixed ~43px wide however tall the row gets,
-				// so the icon runs out of width long before height. reserve the value's
-				// width first and give the icon the rest, or a big icon silently clips
-				// the last digit off. measured on the WIDEST value a block can show, not
-				// the current one, so all four agree and nothing resizes as stats move.
-				int room = w - padX - fm.stringWidth("000") - TEXT_EDGE_PAD;
-				cap = Math.min(cap, Math.min(vh - 2, Math.max(6, room)));
+				double s = Math.min(size / (double) nw, size / (double) nh);
+				iw = Math.max(1, (int) Math.round(nw * s));
+				ih = Math.max(1, (int) Math.round(nh * s));
 			}
-			double s = Math.min(cap / (double) nw, cap / (double) nh);
-			// asking for more than the biggest native icon can only mean "grow them", so
-			// the slider acts on its own up there rather than sitting dead until the
-			// upscale toggle is found. below native the toggle still decides, because
-			// that is where leaving an icon alone keeps it pixel-exact.
-			boolean resize = s < 1
-				|| config.orbIconUpscale()
-				|| config.orbIconSize() > maxNativeIcon();
-			iw = resize ? Math.max(1, (int) Math.round(nw * s)) : nw;
-			ih = resize ? Math.max(1, (int) Math.round(nh * s)) : nh;
 			if (config.orbDebug())
 			{
 				debugGeom = "slot" + w + " row" + h + " cov" + cover + " vh" + vh;
-				debugIcon = "set" + config.orbIconSize() + " cap" + cap
-					+ " nat" + maxNativeIcon()
-					+ " " + nw + "x" + nh + ">" + iw + "x" + ih
-					+ (resize ? "" : " NORESIZE");
+				debugIcon = "set" + size + " nat" + nw + "x" + nh + ">" + iw + "x" + ih;
 			}
 		}
 
@@ -356,24 +299,19 @@ public class MysticHudFrameOverlay extends Overlay
 			case CENTRED:
 				// gap is left out of the centring on purpose: it should push the value
 				// away from the icon, not slide the icon along with it
-				ix = x + Math.max(padX, (w - (iw + tw)) / 2);
+				ix = x + (w - (iw + tw)) / 2;
 				tx = ix + iw + gap;
 				break;
 			case RIGHT_EDGE:
-				// never let the right-alignment pull the value back over the icon
 				ix = x + padX;
-				tx = Math.max(ix + iw + gap, x + w - TEXT_EDGE_PAD - tw);
+				tx = x + w - TEXT_EDGE_PAD - tw;
 				break;
 			default:
 				ix = x + padX;
 				tx = ix + iw + gap;
 				break;
 		}
-		if (!stacked && !over)
-		{
-			// the value runs out of block before the icon does; hold it at the edge
-			tx = Math.min(tx, x + w - TEXT_EDGE_PAD - tw);
-		}
+		tx += config.orbTextNudgeX();
 
 		// stacked centres the icon and value as a column; the rest centre each on the row.
 		// gap is left out of the centring here too, so widening it drops the value down
@@ -401,7 +339,7 @@ public class MysticHudFrameOverlay extends Overlay
 
 		// no fudge on the baseline: the -2 that used to be here sat the value 2px above
 		// true centre, which is the other half of why the nudges differed by mode
-		int ty = (stacked && !over ? Math.min(top + ih + gap + th, y + vh - 1) : y + (vh + th) / 2)
+		int ty = (stacked && !over ? top + ih + gap + th : y + (vh + th) / 2)
 			+ config.orbTextNudgeY();
 		g.setColor(Color.BLACK);
 		if (over)
