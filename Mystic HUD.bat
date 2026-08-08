@@ -71,6 +71,30 @@ set "PATH=!JAVA_HOME!\bin;!PATH!"
 setx JAVA_HOME "!JAVA_HOME!" >nul
 
 :launch
+REM Jagex account login. the Jagex Launcher hands the client its tokens through the
+REM environment, and this is not started by the Jagex Launcher, so pass them along
+REM the same way. the file is written by RuneLite's own launcher and holds exactly
+REM the five JX_ variables the client looks for.
+set "CREDS=%USERPROFILE%\.runelite\credentials.properties"
+if exist "!CREDS!" (
+	for /f "usebackq eol=# tokens=1,* delims==" %%a in ("!CREDS!") do set "%%a=%%b"
+	REM the file can exist with the tokens blanked out, which is not the same as
+	REM having a session. check the token itself, not the display name, or this
+	REM cheerfully says "logging in as" and then drops to a login it cannot pass.
+	if defined JX_ACCESS_TOKEN (
+		echo Logging in as !JX_DISPLAY_NAME!
+	) else (
+		echo Jagex account details are there but empty, so the login will not work.
+		echo Open RuneLite from the Jagex Launcher once, then run this again.
+		echo.
+	)
+) else (
+	echo No Jagex account details found, you will get the normal login screen.
+	echo If this is a Jagex account, open RuneLite from the Jagex Launcher once
+	echo first, then run this again.
+	echo.
+)
+
 echo Starting Mystic HUD...
 java -jar -ea "!JAR!"
 set "CODE=%ERRORLEVEL%"
