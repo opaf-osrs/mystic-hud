@@ -213,18 +213,33 @@ public class MysticHudFrameOverlay extends Overlay
 
 		int padX = config.orbIconPadX();
 		int gap = icon != null ? config.orbTextGap() : 0;
+		MysticHudConfig.TextAlign align = config.orbTextAlign();
+		boolean stacked = align == MysticHudConfig.TextAlign.STACKED;
+		int th = fm.getAscent();
 		int iw = 0;
 		int ih = 0;
 		if (icon != null)
 		{
 			int nw = icon.getWidth();
 			int nh = icon.getHeight();
-			// the block is a fixed ~43px wide however tall the row gets, so a large icon
-			// size will run out of width long before it runs out of height. the value
-			// wins that fight: reserve its width first and let the icon have the rest,
-			// otherwise a big icon silently clips the last digit off a 3-digit number.
-			int room = w - padX - gap - tw - TEXT_EDGE_PAD;
-			int cap = Math.min(config.orbIconSize(), Math.min(h - 2, Math.max(6, room)));
+			int cap = config.orbIconSize();
+			if (stacked)
+			{
+				// stacked spends the row's HEIGHT on the icon, which is the axis that
+				// actually grows, so this is the only layout where a tall row buys a
+				// bigger icon
+				cap = Math.min(cap, Math.min(w - 2, Math.max(6, h - th - gap - 2)));
+			}
+			else
+			{
+				// side by side the block is a fixed ~43px wide however tall the row gets,
+				// so the icon runs out of width long before height. reserve the value's
+				// width first and give the icon the rest, or a big icon silently clips
+				// the last digit off. measured on the WIDEST value a block can show, not
+				// the current one, so all four agree and nothing resizes as stats move.
+				int room = w - padX - gap - fm.stringWidth("000") - TEXT_EDGE_PAD;
+				cap = Math.min(cap, Math.min(h - 2, Math.max(6, room)));
+			}
 			double s = Math.min(cap / (double) nw, cap / (double) nh);
 			boolean resize = s < 1 || config.orbIconUpscale();
 			iw = resize ? Math.max(1, (int) Math.round(nw * s)) : nw;
@@ -233,8 +248,12 @@ public class MysticHudFrameOverlay extends Overlay
 
 		int ix;
 		int tx;
-		switch (config.orbTextAlign())
+		switch (align)
 		{
+			case STACKED:
+				ix = x + (w - iw) / 2;
+				tx = x + (w - tw) / 2;
+				break;
 			case CENTRED:
 				ix = x + Math.max(padX, (w - (iw + gap + tw)) / 2);
 				tx = ix + iw + gap;
@@ -250,9 +269,11 @@ public class MysticHudFrameOverlay extends Overlay
 				break;
 		}
 
+		// stacked centres the icon and value as a column; the rest centre each on the row
+		int top = y + (h - (ih + gap + th)) / 2;
 		if (icon != null)
 		{
-			int iy = y + (h - ih) / 2 + config.orbIconNudgeY();
+			int iy = (stacked ? top : y + (h - ih) / 2) + config.orbIconNudgeY();
 			if (iw == icon.getWidth() && ih == icon.getHeight())
 			{
 				g.drawImage(icon, ix, iy, null);
@@ -270,7 +291,8 @@ public class MysticHudFrameOverlay extends Overlay
 			}
 		}
 
-		int ty = y + (h + fm.getAscent()) / 2 - 2 + config.orbTextNudgeY();
+		int ty = (stacked ? top + ih + gap + th : y + (h + th) / 2 - 2)
+			+ config.orbTextNudgeY();
 		g.setColor(Color.BLACK);
 		g.drawString(value, tx + 1, ty + 1);
 		g.setColor(TEXT);

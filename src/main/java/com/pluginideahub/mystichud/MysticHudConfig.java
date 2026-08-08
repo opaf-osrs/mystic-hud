@@ -85,13 +85,13 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "orbIconSize",
 		name = "Icon size",
-		description = "Largest an orb icon is drawn. Icons already smaller than this keep their native size unless 'Scale icons up' is on.",
+		description = "Largest an orb icon is drawn. 20 is the biggest native size, so at 20 nothing is resized at all. Going above it needs 'Scale icons up', and needs the stacked value position to have anywhere to grow.",
 		section = ORB_LAYOUT,
 		position = 2
 	)
 	default int orbIconSize()
 	{
-		return 16;
+		return 20;
 	}
 
 	@ConfigItem(
@@ -135,7 +135,7 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "orbTextAlign",
 		name = "Value position",
-		description = "Where the number sits: straight after the icon, pinned to the right edge, or icon and number centred together as one group",
+		description = "Where the number sits. Stacked puts it under the icon instead of beside it, which is the only layout where a tall row buys you a bigger icon.",
 		section = ORB_LAYOUT,
 		position = 6
 	)
@@ -308,6 +308,7 @@ public interface MysticHudConfig extends Config
 	{
 		AFTER_ICON,
 		RIGHT_EDGE,
-		CENTRED
+		CENTRED,
+		STACKED
 	}
 }
