@@ -75,9 +75,23 @@ $found = $found |
 
 # NOT newest-wins. gradle 8.10 refuses to run on anything past Java 22, and the
 # plugin only needs 11, so take the oldest usable one: it is the best tested and
-# cannot be too new. only reach outside that window if there is nothing in it.
-$usable = $found | Where-Object { $_.Major -le 22 }
-if (-not $usable) { $usable = $found }
+# cannot be too new.
+#
+# The ceiling is a HARD no when a compiler was asked for, and this used to fall back
+# outside it. Handing back a Java 26 that gradle cannot run on is not a near miss, it
+# is a failure dressed as success: the caller sees a path, skips installing anything,
+# and the build dies later on "Unsupported class file major version" pointing at
+# nothing useful. Finding none is the better answer, because that is what sends the
+# caller to install one.
+#
+# Runtime has no such ceiling. Starting the packaged jar works on any modern Java, so
+# -RuntimeOnly keeps taking whatever is there.
+if ($RuntimeOnly) {
+	$usable = $found
+} else {
+	$usable = $found | Where-Object { $_.Major -le 22 }
+}
+if (-not $usable) { exit 1 }
 $best = $usable | Sort-Object -Property Major | Select-Object -First 1
 
 Write-Output $best.Path.TrimEnd('\')

@@ -16,15 +16,24 @@ set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "!PS!" set "PS=powershell"
 
 REM ---------------------------------------------------------------- java --
-REM gradle needs a JDK to run at all and the plugin targets Java 11.
+REM gradle needs a JDK to run at all and the plugin targets Java 11. There is a
+REM CEILING as well as a floor, and this used to check only the floor: gradle 8.10
+REM cannot run on anything past Java 22, so a machine with a brand new Java sailed
+REM through here and then died on "Unsupported class file major version" with no
+REM hint that the Java was the problem. A too-new Java is as unusable as none.
+set "JMAXBUILD=22"
 call :findjava
-if !JMAJOR! GEQ 11 (
+if !JMAJOR! GEQ 11 if !JMAJOR! LEQ !JMAXBUILD! (
 	echo [1/2] Java !JVER! found, nothing to install.
 	goto :warm
 )
 
 if "!JMAJOR!"=="0" (
 	echo [1/2] No Java on the PATH.
+) else if !JMAJOR! GTR !JMAXBUILD! (
+	echo [1/2] Java !JVER! is on the PATH, which is too NEW to build with.
+	echo       The build tool needs Java 11 to !JMAXBUILD!. Nothing is removed and your
+	echo       Java stays exactly as it is, this just puts an older one beside it.
 ) else (
 	echo [1/2] Java !JVER! is on the PATH, but this needs 11 or newer.
 )
@@ -141,6 +150,14 @@ if !JMAJOR! LSS 11 (
 	echo.
 	echo Java still is not usable from here. Close this window, open a new one
 	echo and run this again.
+	pause
+	exit /b 1
+)
+if !JMAJOR! GTR !JMAXBUILD! (
+	echo.
+	echo Java !JVER! is still what this window sees, and the build tool cannot run
+	echo on it. A Java 11 was installed, so close this window, open a new one and
+	echo run this again to pick it up.
 	pause
 	exit /b 1
 )
