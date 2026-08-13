@@ -23,6 +23,18 @@ if not exist "!JAR!" (
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "!PS!" set "PS=powershell"
 
+REM anyone running this already has RuneLite, and RuneLite ships its own Java 11
+REM runtime. use that before anything else: it is the version this is built for, it
+REM is already on the machine, and it means the usual case installs nothing at all.
+set "JAVACMD=java"
+for %%r in ("%LOCALAPPDATA%\RuneLite" "%ProgramFiles%\RuneLite" "%ProgramFiles(x86)%\RuneLite") do (
+	if "!JAVACMD!"=="java" if exist "%%~r\jre\bin\java.exe" set "JAVACMD=%%~r\jre\bin\java.exe"
+)
+if not "!JAVACMD!"=="java" (
+	echo Using the Java that came with RuneLite.
+	goto :launch
+)
+
 call :findjava
 if !JMAJOR! GEQ 11 goto :launch
 
@@ -133,7 +145,7 @@ echo.
 
 :go
 echo Starting Mystic HUD...
-java -jar -ea "!JAR!"
+"!JAVACMD!" -jar -ea "!JAR!"
 set "CODE=%ERRORLEVEL%"
 if not "%CODE%"=="0" (
 	echo.
