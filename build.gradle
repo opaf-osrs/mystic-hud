@@ -55,8 +55,26 @@ tasks.register('run', JavaExec) {
 // one runnable jar with the client and the plugin inside, so it goes to whoever is
 // using it as a single file they start with `java -jar`. no repo, no gradle, no JDK
 // on their side: a plain Java runtime is enough to run it.
-shadowJar {
+// the plugin and the entry point that loads it, and nothing else: about 40kb. it runs
+// against the client jars RuneLite has already downloaded into .runelite\repository2,
+// so there is no reason to hand someone a second copy of a client they have.
+tasks.register('thinJar', Jar) {
 	archiveBaseName = 'mystic-hud'
+	archiveClassifier = ''
+	archiveVersion = ''
+	from sourceSets.main.output
+	from(sourceSets.test.output) {
+		exclude '**/*Test.class'   // the entry point, not the unit tests
+	}
+	manifest {
+		attributes 'Main-Class': pluginMainClass
+	}
+}
+
+// the everything-inside build, for a machine with no RuneLite on it at all. ~30mb,
+// which is why it is not what gets sent.
+shadowJar {
+	archiveBaseName = 'mystic-hud-standalone'
 	archiveClassifier = ''
 	archiveVersion = ''
 	// the client is compileOnly for the plugin itself, so take the runtime side from
@@ -80,9 +98,9 @@ shadowJar {
 tasks.register('dist', Copy) {
 	group = 'distribution'
 	description = 'Assembles the folder to send: jar, launcher and java finder'
-	dependsOn tasks.shadowJar
+	dependsOn tasks.thinJar
 	into layout.buildDirectory.dir('dist')
-	from tasks.shadowJar
+	from tasks.thinJar
 	from(projectDir) {
 		include 'Mystic HUD.bat'
 		include 'find-jdk.ps1'

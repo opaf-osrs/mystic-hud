@@ -144,8 +144,47 @@ if errorlevel 2 exit /b 0
 echo.
 
 :go
+REM Run against the client RuneLite has already downloaded rather than carrying one.
+REM repository2 holds the client and every library it needs, so the file that gets
+REM sent is only the plugin.
+set "REPO=%USERPROFILE%\.runelite\repository2"
+if not exist "!REPO!" (
+	echo.
+	echo RuneLite's files were not found at:
+	echo    !REPO!
+	echo.
+	echo Open RuneLite normally once so it downloads them, then run this again.
+	echo.
+	pause
+	exit /b 1
+)
+
+REM newest first BY DATE, not by name: 1.12.9 sorts above 1.12.10 alphabetically and
+REM that would quietly pick an old client. only one of each goes on the classpath,
+REM since old versions stay in the folder next to the current one.
+set "CP=!JAR!"
+set "CLIENTJAR="
+for /f "delims=" %%j in ('dir /b /o-d "!REPO!\client-*.jar" 2^>nul') do (
+	if not defined CLIENTJAR set "CLIENTJAR=1" & set "CP=!CP!;!REPO!\%%j"
+)
+set "INJJAR="
+for /f "delims=" %%j in ('dir /b /o-d "!REPO!\injected-client-*.jar" 2^>nul') do (
+	if not defined INJJAR set "INJJAR=1" & set "CP=!CP!;!REPO!\%%j"
+)
+if not defined CLIENTJAR (
+	echo.
+	echo No RuneLite client was found in !REPO!
+	echo Open RuneLite normally once, then run this again.
+	echo.
+	pause
+	exit /b 1
+)
+for /f "delims=" %%j in ('dir /b "!REPO!\*.jar" 2^>nul') do (
+	echo %%j | findstr /b /i "client- injected-client-" >nul || set "CP=!CP!;!REPO!\%%j"
+)
+
 echo Starting Mystic HUD...
-"!JAVACMD!" -jar -ea "!JAR!"
+"!JAVACMD!" -ea -cp "!CP!" com.pluginideahub.mystichud.MysticHudTestClient
 set "CODE=%ERRORLEVEL%"
 if not "%CODE%"=="0" (
 	echo.
