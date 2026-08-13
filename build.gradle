@@ -64,3 +64,21 @@ shadowJar {
 	exclude 'module-info.class', 'META-INF/versions/*/module-info.class'
 	mergeServiceFiles()
 }
+
+// build/dist is the folder to hand over as-is: the jar, the thing you double click,
+// and the java finder it leans on. assembling it here means there is no list of
+// files to remember and no chance of sending two of the three.
+tasks.register('dist', Copy) {
+	group = 'distribution'
+	description = 'Assembles the folder to send: jar, launcher and java finder'
+	dependsOn tasks.shadowJar
+	into layout.buildDirectory.dir('dist')
+	from tasks.shadowJar
+	from(projectDir) {
+		include 'Mystic HUD.bat'
+		include 'find-jdk.ps1'
+	}
+	doLast {
+		println "ready to send: ${layout.buildDirectory.dir('dist').get()}"
+	}
+}

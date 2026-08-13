@@ -6,10 +6,15 @@ title Mystic HUD
 REM Everything is inside mystic-hud.jar, client and plugin both, so all this has to
 REM do is find a Java to start it with. Only a runtime is needed, not a full JDK.
 
+REM next to this file is how it ships. build\libs is where it lands when run from
+REM the source folder, so the same file works in both places without being copied.
 set "JAR=%~dp0mystic-hud.jar"
+if not exist "!JAR!" set "JAR=%~dp0build\libs\mystic-hud.jar"
 if not exist "!JAR!" (
-	echo mystic-hud.jar is not next to this file.
-	echo Keep the two together in the same folder.
+	echo mystic-hud.jar was not found.
+	echo.
+	echo It should sit next to this file. If you are running this from the
+	echo source folder, build it first with:  gradlew shadowJar
 	echo.
 	pause
 	exit /b 1
