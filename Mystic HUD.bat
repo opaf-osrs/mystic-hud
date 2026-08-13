@@ -83,10 +83,13 @@ REM login screen a jagex account can never get past, with no explanation.
 set "CREDS=%USERPROFILE%\.runelite\credentials.properties"
 set "HAVECREDS="
 if exist "!CREDS!" (
-	REM present but blank is a real state and is NOT the same as having a session,
-	REM so look at the token itself rather than at the file existing
+	REM JX_SESSION_ID is the field to test. the access and refresh tokens are always
+	REM written EMPTY, checked across three of these files from two accounts six weeks
+	REM apart: they are short lived and fetched again at login, so they are not stored.
+	REM checking the access token instead sent a perfectly good setup round the whole
+	REM configure-the-launcher loop for nothing.
 	for /f "usebackq eol=# tokens=1,* delims==" %%a in ("!CREDS!") do (
-		if /i "%%a"=="JX_ACCESS_TOKEN" if not "%%b"=="" set "HAVECREDS=1"
+		if /i "%%a"=="JX_SESSION_ID" if not "%%b"=="" set "HAVECREDS=1"
 	)
 )
 
