@@ -71,30 +71,59 @@ set "PATH=!JAVA_HOME!\bin;!PATH!"
 setx JAVA_HOME "!JAVA_HOME!" >nul
 
 :launch
-REM Jagex account login. the Jagex Launcher hands the client its tokens through the
-REM environment, and this is not started by the Jagex Launcher, so pass them along
-REM the same way. the file is written by RuneLite's own launcher and holds exactly
-REM the five JX_ variables the client looks for.
+REM Jagex account login. the client reads .runelite\credentials.properties itself,
+REM so nothing has to be passed to it. all this does is check the file is actually
+REM usable and say exactly how to fix it if not, because the failure otherwise is a
+REM login screen a jagex account can never get past, with no explanation.
 set "CREDS=%USERPROFILE%\.runelite\credentials.properties"
+set "HAVECREDS="
 if exist "!CREDS!" (
-	for /f "usebackq eol=# tokens=1,* delims==" %%a in ("!CREDS!") do set "%%a=%%b"
-	REM the file can exist with the tokens blanked out, which is not the same as
-	REM having a session. check the token itself, not the display name, or this
-	REM cheerfully says "logging in as" and then drops to a login it cannot pass.
-	if defined JX_ACCESS_TOKEN (
-		echo Logging in as !JX_DISPLAY_NAME!
-	) else (
-		echo Jagex account details are there but empty, so the login will not work.
-		echo Open RuneLite from the Jagex Launcher once, then run this again.
-		echo.
+	REM present but blank is a real state and is NOT the same as having a session,
+	REM so look at the token itself rather than at the file existing
+	for /f "usebackq eol=# tokens=1,* delims==" %%a in ("!CREDS!") do (
+		if /i "%%a"=="JX_ACCESS_TOKEN" if not "%%b"=="" set "HAVECREDS=1"
 	)
-) else (
-	echo No Jagex account details found, you will get the normal login screen.
-	echo If this is a Jagex account, open RuneLite from the Jagex Launcher once
-	echo first, then run this again.
+)
+
+if defined HAVECREDS goto :go
+
+echo.
+echo   ------------------------------------------------------------
+echo    Jagex account login is not set up yet.
+echo.
+echo    This runs RuneLite directly rather than through the Jagex
+echo    Launcher, so it needs the launcher to save your login once.
+echo.
+echo    1. Open "RuneLite (configure)" from the Start menu
+echo    2. In "Client arguments" put:  --insecure-write-credentials
+echo    3. Save, then launch RuneLite from the Jagex Launcher once
+echo    4. Close it and run this again
+echo.
+echo    If you use an old style username and password login instead,
+echo    you can ignore all of this and just continue.
+echo   ------------------------------------------------------------
+echo.
+
+set "RLCONF=%LOCALAPPDATA%\RuneLite\RuneLite.exe"
+if exist "!RLCONF!" (
+	choice /c YN /n /m "Open the RuneLite configure window now? [Y/N] "
+	if not errorlevel 2 (
+		start "" "!RLCONF!" --configure
+		echo.
+		echo Set the argument, save, launch once from the Jagex Launcher,
+		echo then run this again.
+		echo.
+		pause
+		exit /b 0
+	)
 	echo.
 )
 
+choice /c YN /n /m "Start anyway? [Y/N] "
+if errorlevel 2 exit /b 0
+echo.
+
+:go
 echo Starting Mystic HUD...
 java -jar -ea "!JAR!"
 set "CODE=%ERRORLEVEL%"
