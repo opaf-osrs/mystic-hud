@@ -14,6 +14,9 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -91,6 +94,83 @@ public class MysticHudPlugin extends Plugin
 		return rowH;
 	}
 
+	// live orb states, read off VarbitChanged rather than polled in the overlay's render.
+	// written on the client thread, read on the draw thread, hence volatile.
+	private volatile boolean specArmed;
+	private volatile boolean running;
+	private volatile boolean staminaActive;
+	private volatile boolean quickPrayersOn;
+	private volatile HealthState healthState = HealthState.NORMAL;
+
+	enum HealthState
+	{
+		NORMAL,
+		POISONED,
+		VENOMED,
+		DISEASED
+	}
+
+	boolean specArmed()
+	{
+		return specArmed;
+	}
+
+	boolean running()
+	{
+		return running;
+	}
+
+	boolean staminaActive()
+	{
+		return staminaActive;
+	}
+
+	boolean quickPrayersOn()
+	{
+		return quickPrayersOn;
+	}
+
+	HealthState healthState()
+	{
+		return healthState;
+	}
+
+	/**
+	 * Re-reads every orb state. Cheap enough to do wholesale on any varbit or varp
+	 * change rather than working out which one moved, and that way a state can never be
+	 * missed because its var was not in a list.
+	 */
+	private void readOrbStates()
+	{
+		specArmed = client.getVarpValue(VarPlayerID.SA_ATTACK) != 0;
+		running = client.getVarpValue(VarPlayerID.OPTION_RUN) != 0;
+		staminaActive = client.getVarbitValue(VarbitID.STAMINA_ACTIVE) != 0;
+		quickPrayersOn = client.getVarbitValue(VarbitID.QUICKPRAYER_ACTIVE) != 0;
+
+		// venom lives inside the poison varp as a magnitude, it has no var of its own.
+		// order and thresholds taken from RuneLite's own StatusBarsOverlay.
+		int poison = client.getVarpValue(VarPlayerID.POISON);
+		if (poison >= VENOM_THRESHOLD)
+		{
+			healthState = HealthState.VENOMED;
+		}
+		else if (poison > 0)
+		{
+			healthState = HealthState.POISONED;
+		}
+		else if (client.getVarpValue(VarPlayerID.DISEASE) > 0)
+		{
+			healthState = HealthState.DISEASED;
+		}
+		else
+		{
+			healthState = HealthState.NORMAL;
+		}
+	}
+
+	// poison varp counts up; at or past this it is venom instead
+	private static final int VENOM_THRESHOLD = 1000000;
+
 	// geometry, all relative to the 211-wide minimap block
 	// extra block width so the xp orb beside the map is not clipped off the edge
 	static final int SIDE_PAD = 72;
@@ -124,7 +204,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b45";
+	static final String BUILD_TAG = "b47";
 
 	@Inject
 	private Client client;
@@ -334,7 +414,18 @@ public class MysticHudPlugin extends Plugin
 		if (e.getGameState() == GameState.LOGGED_IN)
 		{
 			settle = 60; // ~a second of forced revalidates while the interfaces build
+			// VarbitChanged only tells us about CHANGES, so without this the orbs read
+			// as walking, unarmed and healthy until the player happens to toggle
+			// something. the vars are already set by the time we are logged in.
+			readOrbStates();
 		}
+	}
+
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged e)
+	{
+		// fires for varps as well as varbits, so this one subscription covers all of it
+		readOrbStates();
 	}
 
 	@Subscribe

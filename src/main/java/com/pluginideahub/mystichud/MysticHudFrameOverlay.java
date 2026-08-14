@@ -15,6 +15,7 @@ import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.Skill;
 import net.runelite.api.SpritePixels;
+import net.runelite.api.gameval.SpriteID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.game.SpriteManager;
@@ -37,6 +38,18 @@ public class MysticHudFrameOverlay extends Overlay
 	private static final Color FILL = new Color(0x232323);
 	private static final Color PANEL = new Color(0x1D1D1D);
 	private static final Color TEXT = new Color(0xFFFF00);
+
+	// spec armed: the pale grey-blue off the stock armed filler sprite (1608), and the
+	// lit border. the brighter-fill option multiplies the orb's own colour instead.
+	private static final Color SPEC_ARMED_C = new Color(0x8E, 0xA4, 0xAA);
+	private static final Color ARMED_EDGE = new Color(0xFF, 0xF0, 0xA0);
+	private static final double ARMED_GAIN = 1.6;
+
+	// poison, venom and disease, sampled off the game's own orb filler sprites (1061,
+	// 1102, 1062) so a poisoned block reads the same colour a player already knows
+	private static final Color POISON_C = new Color(0x11, 0x97, 0x00);
+	private static final Color VENOM_C = new Color(0x17, 0x39, 0x28);
+	private static final Color DISEASE_C = new Color(0x99, 0x8B, 0x2C);
 
 	private static final Color HP_C = new Color(0xA8, 0x32, 0x28);
 	private static final Color PRAYER_C = new Color(0x4F, 0x43, 0x82);
@@ -184,6 +197,11 @@ public class MysticHudFrameOverlay extends Overlay
 				config.orbTextAlign().name(),
 				debugGeom,
 				debugIcon,
+				(plugin.running() ? "RUN" : "walk")
+					+ (plugin.staminaActive() ? "+stam" : "")
+					+ (plugin.quickPrayersOn() ? " QP" : "")
+					+ (plugin.specArmed() ? " SPEC" : "")
+					+ " hp:" + plugin.healthState().name().toLowerCase(java.util.Locale.ROOT),
 			};
 			int ly = mb.y + 14;
 			for (String line : lines)
@@ -239,7 +257,15 @@ public class MysticHudFrameOverlay extends Overlay
 	{
 		int vh = Math.max(8, h - cover);
 
+		// the spec block is the one orb whose active state has no art of its own: stock
+		// shows "armed" on the filler sphere, which the flat blocks do not draw
+		boolean armed = orbChild == MysticHudPlugin.SPEC && plugin.specArmed();
+
 		Color c = orbColor(orbChild);
+		if (armed)
+		{
+			c = specArmedColor(c);
+		}
 		g.setColor(new Color(c.getRed() / 3, c.getGreen() / 3, c.getBlue() / 3));
 		g.fillRect(x, y, w, h);
 		int fh = Math.round(h * fraction(orbChild));
@@ -247,7 +273,7 @@ public class MysticHudFrameOverlay extends Overlay
 		g.fillRect(x, y + h - fh, w, fh);
 
 		// one uniform 1px border, the same EDGE colour as everything else
-		g.setColor(EDGE);
+		g.setColor(armed && config.specArmedBorder() ? ARMED_EDGE : EDGE);
 		g.drawRect(x, y, w - 1, h - 1);
 
 		// icon and value. the four stock icons are pixel art authored at different sizes
@@ -534,26 +560,88 @@ public class MysticHudFrameOverlay extends Overlay
 		}
 	}
 
-	private static Color orbColor(int orbChild)
+	private Color orbColor(int orbChild)
 	{
 		switch (orbChild)
 		{
-			case MysticHudPlugin.HP: return HP_C;
+			case MysticHudPlugin.HP: return healthColor();
 			case MysticHudPlugin.PRAYER: return PRAYER_C;
 			case MysticHudPlugin.RUN: return RUN_C;
 			default: return SPEC_C;
 		}
 	}
 
-	// hp heart, prayer star, run boot, spec swords: the stock orb icon sprites
+	/**
+	 * The spec block's colour while a special is queued. BRIGHTER is derived from
+	 * whatever the orb's colour already is rather than hardcoded, so it follows the
+	 * palette; GAME_COLOUR is the pale grey-blue sampled off the stock armed filler
+	 * sprite (1608), which is what a player will already recognise.
+	 */
+	private Color specArmedColor(Color base)
+	{
+		switch (config.specArmedFill())
+		{
+			case BRIGHTER:
+				return new Color(
+					Math.min(255, (int) (base.getRed() * ARMED_GAIN)),
+					Math.min(255, (int) (base.getGreen() * ARMED_GAIN)),
+					Math.min(255, (int) (base.getBlue() * ARMED_GAIN)));
+			case GAME_COLOUR:
+				return SPEC_ARMED_C;
+			default:
+				return base;
+		}
+	}
+
+	/**
+	 * There is only one heart icon, so unlike run and prayer the health orb cannot show
+	 * poison by swapping art. Stock puts it on the filler sphere instead, which we do not
+	 * draw, so the block itself carries it.
+	 */
+	private Color healthColor()
+	{
+		switch (plugin.healthState())
+		{
+			case POISONED: return POISON_C;
+			case VENOMED: return VENOM_C;
+			case DISEASED: return DISEASE_C;
+			default: return HP_C;
+		}
+	}
+
+	// The stock orb icons. SpriteID.OrbIcon names them _0.._6 with no hint of what any of
+	// them is, so they are given their meanings here rather than left as bare numbers
+	// wherever they get used.
+	private static final int ICON_HITPOINTS = SpriteID.OrbIcon._0;      // 1067 heart
+	private static final int ICON_PRAYER = SpriteID.OrbIcon._1;         // 1068 star, off
+	private static final int ICON_PRAYER_ACTIVE = SpriteID.OrbIcon._4;  // 1058 star, quick prayers on
+	private static final int ICON_WALK = SpriteID.OrbIcon._2;           // 1069 boot, walking
+	private static final int ICON_RUN = SpriteID.OrbIcon._3;            // 1070 boot, running
+	private static final int ICON_RUN_STAMINA = SpriteID.OrbIcon._5;    // 1092 boot, stamina up
+	private static final int ICON_SPECIAL = SpriteID.OrbIcon._6;        // 1610 crossed swords
+
+	/**
+	 * The icon for an orb in its CURRENT state. Run and prayer both have real active art
+	 * in the cache and the stock orbs swap to it; drawing our own icon is what lost that.
+	 * The run orb in particular was pinned to 1069, which is the WALKING boot, so it
+	 * never once showed that the player was running.
+	 */
 	private int iconSprite(int orbChild)
 	{
 		switch (orbChild)
 		{
-			case MysticHudPlugin.HP: return 1067;
-			case MysticHudPlugin.PRAYER: return 1068;
-			case MysticHudPlugin.RUN: return 1069;
-			default: return 1610;
+			case MysticHudPlugin.HP:
+				return ICON_HITPOINTS;
+			case MysticHudPlugin.PRAYER:
+				return plugin.quickPrayersOn() ? ICON_PRAYER_ACTIVE : ICON_PRAYER;
+			case MysticHudPlugin.RUN:
+				if (plugin.staminaActive())
+				{
+					return ICON_RUN_STAMINA;
+				}
+				return plugin.running() ? ICON_RUN : ICON_WALK;
+			default:
+				return ICON_SPECIAL;
 		}
 	}
 

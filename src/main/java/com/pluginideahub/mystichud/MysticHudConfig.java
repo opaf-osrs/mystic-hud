@@ -212,11 +212,35 @@ public interface MysticHudConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "specArmedFill",
+		name = "Spec armed fill",
+		description = "How the special attack block changes while a special is queued. Brighter keeps the orb's own blue; Game colour is the pale grey-blue stock RuneLite uses.",
+		section = ORB_LAYOUT,
+		position = 12
+	)
+	default SpecArmedFill specArmedFill()
+	{
+		return SpecArmedFill.BRIGHTER;
+	}
+
+	@ConfigItem(
+		keyName = "specArmedBorder",
+		name = "Spec armed border",
+		description = "Also light up the border of the special attack block while a special is queued. Combines with the fill setting.",
+		section = ORB_LAYOUT,
+		position = 13
+	)
+	default boolean specArmedBorder()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "orbDebug",
 		name = "Debug readout",
 		description = "Paint the real numbers the layout is working from over the minimap, for when a setting does not appear to do anything",
 		section = ORB_LAYOUT,
-		position = 12
+		position = 14
 	)
 	default boolean orbDebug()
 	{
@@ -342,6 +366,13 @@ public interface MysticHudConfig extends Config
 		SPEC_PRAYER_RUN_HP,
 		HP_PRAYER_RUN_SPEC,
 		HP_PRAYER_SPEC_RUN
+	}
+
+	enum SpecArmedFill
+	{
+		NONE,
+		BRIGHTER,
+		GAME_COLOUR
 	}
 
 	enum TextAlign
