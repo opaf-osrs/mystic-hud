@@ -59,26 +59,13 @@ public class MysticHudFrameOverlay extends Overlay
 	private static final int COMPASS_SIZE = MysticHudPlugin.COMPASS_SIZE;
 	private static final int COMPASS_SPRITE = 169; // 51x51 compass rose, verified in cache
 
-	// the inventory's OWN border art, bundled from the Mystic pack, so the block's frame
-	// is pixel-identical to the panel's: 8x8 silver-bevel corners, 4px edge tiles
-	private static final BufferedImage C_TL = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_top_left.png");
-	private static final BufferedImage C_TR = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_top_right.png");
-	private static final BufferedImage C_BL = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_bottom_left.png");
-	private static final BufferedImage C_BR = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_bottom_right.png");
-	private static final BufferedImage E_TOP = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_top.png");
-	private static final BufferedImage E_BOTTOM = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_bottom.png");
-	private static final BufferedImage E_LEFT = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_left.png");
-	private static final BufferedImage E_RIGHT = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_right.png");
-	private static final BufferedImage E_MID = net.runelite.client.util.ImageUtil
-		.loadImageResource(MysticHudFrameOverlay.class, "side_border_middle.png");
+	// no border art is bundled. the frame is drawn from the steel border sprites (310-315)
+	// read through loadSprite, which checks the client's sprite override table before the
+	// cache: whatever pack the player is running supplies its own art there, so with
+	// Mystic active the frame IS Mystic's and matches the inventory panel exactly, and
+	// with no pack it falls back to the game's own steel. that is a read of live client
+	// state rather than a dependency on another plugin, and nothing third-party ships
+	// inside this repo.
 
 	private final Client client;
 	private final SpriteManager spriteManager;
