@@ -211,7 +211,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b65";
+	static final String BUILD_TAG = "b66";
 
 	@Inject
 	private Client client;
@@ -780,10 +780,16 @@ public class MysticHudPlugin extends Plugin
 		return config.nativeMapWidth() ? NATIVE_MAP : INV_W;
 	}
 
-	/** Left padding that centres a native-width map inside the full-width frame. */
+	/**
+	 * How far the map container sits to the right of the frame. At native width it is the
+	 * padding that centres the map in the frame. At full width it is the click-alignment
+	 * shift: the engine centres clicks on where it paints the player, which is NOT the
+	 * centre of a map painted wider than native, so sliding the container right moves the
+	 * player onto the frame's centre and the clicks with it.
+	 */
 	private int mapInset()
 	{
-		return (INV_W - cfgMapW()) / 2;
+		return config.nativeMapWidth() ? (INV_W - cfgMapW()) / 2 : config.mapShiftX();
 	}
 
 	private int cfgMapH()

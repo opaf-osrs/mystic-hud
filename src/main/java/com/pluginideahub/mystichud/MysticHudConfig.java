@@ -68,6 +68,24 @@ public interface MysticHudConfig extends Config
 		return false;
 	}
 
+	// the click error measured as a CONSTANT 10 tiles at two very different click
+	// positions, so it is a fixed pixel shift and nothing to do with scale or zoom. the
+	// engine centres clicks on where it draws the player, which is not the centre of a
+	// map painted wider than native. shifting the container relative to the frame moves
+	// the player onto the frame's centre; this is that shift, left literal so the exact
+	// number can be found by eye rather than guessed at.
+	@Range(min = -60, max = 60)
+	@ConfigItem(
+		keyName = "mapShiftX",
+		name = "Click alignment",
+		description = "Shifts the map sideways inside its frame until minimap clicks land where you point. The map paints from wherever it starts, so a positive value leaves that many pixels of frame bare on the left. 0 is no shift.",
+		position = 2
+	)
+	default int mapShiftX()
+	{
+		return 0;
+	}
+
 	@ConfigItem(
 		keyName = "mapOutline",
 		name = "Map outline",
