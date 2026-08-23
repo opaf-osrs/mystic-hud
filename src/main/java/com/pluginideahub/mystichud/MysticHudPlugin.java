@@ -208,7 +208,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b62";
+	static final String BUILD_TAG = "b63";
 
 	@Inject
 	private Client client;
@@ -555,10 +555,19 @@ public class MysticHudPlugin extends Plugin
 					net.runelite.api.Perspective.localToMinimap(client, me.getLocalLocation(), 10000);
 				if (pm != null)
 				{
-					log.debug("MHUD probe engineCentre=({},{}) ourCentre=({},{}) DELTA=({},{}) mb={} yaw={}",
-						pm.getX(), pm.getY(), mb.x + mb.width / 2, mb.y + mb.height / 2,
-						pm.getX() - (mb.x + mb.width / 2), pm.getY() - (mb.y + mb.height / 2),
-						mb, client.getCameraYaw());
+					// the two centres that actually matter: where the ENGINE takes clicks
+					// from (the map container's left edge plus native half-width) against
+					// the centre of the frame the player aims with. their gap IS the walk
+					// offset, in pixels, with no click needed to see it.
+					Widget innerW = top(MINIMAP_INNER);
+					net.runelite.api.Point il = innerW == null ? null : innerW.getCanvasLocation();
+					int engineCx = il == null ? -1 : il.getX() + NATIVE_MAP / 2;
+					int frameCx = mb.x + mb.width / 2;
+					log.debug("MHUD probe frameCentreX={} engineClickCentreX={} GAP={} "
+							+ "innerCanvasX={} innerW={} mb={} native={} yaw={}",
+						frameCx, engineCx, engineCx < 0 ? 0 : frameCx - engineCx,
+						il == null ? -1 : il.getX(), innerW == null ? -1 : innerW.getWidth(),
+						mb, config.nativeMapWidth(), client.getCameraYaw());
 				}
 			}
 		}

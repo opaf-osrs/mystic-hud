@@ -61,7 +61,7 @@ public interface MysticHudConfig extends Config
 	)
 	default boolean nativeMapWidth()
 	{
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
