@@ -211,7 +211,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b66";
+	static final String BUILD_TAG = "b67";
 
 	@Inject
 	private Client client;
@@ -1009,7 +1009,15 @@ public class MysticHudPlugin extends Plugin
 		dirty |= set(map, 0, 0, cfgMapW(), cfgMapH());
 		if (config.squareMinimap())
 		{
-			overrideMask(cfgMapW(), cfgMapH());
+			// THE MASK IS THE CENTRING, and it is deliberately NOT the container's width.
+			// sliding the container moved the map and took the click area with it, error
+			// unchanged, so draw and clicks are bound together and the mismatch is inside
+			// the map: painted wide, the player is drawn centred in 204 (at +102) while
+			// clicks still resolve against native centre (+76). at the mask's native
+			// width the engine centres on +76 for BOTH, so they agree and the map can
+			// still paint the full container width. that also matches the map caleb
+			// remembers, weighted west with more showing to the east.
+			overrideMask(config.maskNative() ? NATIVE_MAP : cfgMapW(), cfgMapH());
 		}
 		else
 		{

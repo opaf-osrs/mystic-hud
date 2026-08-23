@@ -87,6 +87,17 @@ public interface MysticHudConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "maskNative",
+		name = "Native mask",
+		description = "Keeps the minimap mask at its native 152 while the map still paints the full container width. The mask is what the engine centres on, so at native the drawn player and the click maths agree and clicks land true; the map stays full width but you sit left of its middle, seeing further east than west.",
+		position = 2
+	)
+	default boolean maskNative()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "mapOutline",
 		name = "Map outline",
 		description = "Draw a UI frame around the rectangular minimap",
