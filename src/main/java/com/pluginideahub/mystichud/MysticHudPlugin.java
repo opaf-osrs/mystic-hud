@@ -208,7 +208,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b59";
+	static final String BUILD_TAG = "b60";
 
 	@Inject
 	private Client client;
@@ -234,6 +234,9 @@ public class MysticHudPlugin extends Plugin
 	// live drag state; offsets persist through the hidden posX/posY config keys.
 	// written on the AWT thread, read on the client thread
 	private volatile Rectangle mapBounds;
+	// the map's OWN rect. same as mapBounds at full width; inset inside it at native
+	// width. anything that must sit on the map rather than on the frame uses this.
+	private volatile Rectangle mapDrawRect;
 	private volatile int offX;
 	private volatile int offY;
 	private boolean dragging;
@@ -266,7 +269,7 @@ public class MysticHudPlugin extends Plugin
 			if (b != null && config.showCompass()
 				&& e.getButton() == MouseEvent.BUTTON1 && !e.isShiftDown())
 			{
-				Rectangle cb = compassBounds(b);
+				Rectangle cb = compassBounds(mapRect());
 				cb.grow(3, 3); // forgiving edge
 				boolean hit = hits(cb, e);
 				log.debug("MHUD compass click win=({},{}) cb={} hit={}",
@@ -646,9 +649,23 @@ public class MysticHudPlugin extends Plugin
 		return block != null && !block.isHidden();
 	}
 
+	/**
+	 * The map container's TRUE width. The engine paints the minimap at native 152 and no
+	 * wider: stretching the container to the inventory's 204 does not buy more map, it
+	 * leaves the east 52px unpainted (the black strip) and, because the engine centres the
+	 * player on ITS 152, puts the real map centre 26px left of the frame's centre. Clicks
+	 * are taken against the engine's rect, so aiming by the frame lands 26px east, which
+	 * is the walk offset. At native width, frame, draw and clicks all share a centre.
+	 */
 	private int cfgMapW()
 	{
-		return INV_W; // always inventory width
+		return config.nativeMapWidth() ? NATIVE_MAP : INV_W;
+	}
+
+	/** Left padding that centres a native-width map inside the full-width frame. */
+	private int mapInset()
+	{
+		return (INV_W - cfgMapW()) / 2;
 	}
 
 	private int cfgMapH()
@@ -686,10 +703,21 @@ public class MysticHudPlugin extends Plugin
 		return (mapW - (4 * slotWidth() + 3 * BLOCK_GAP)) / 2;
 	}
 
-	/** Where the map actually is on canvas, or null while the layout is not applied. */
+	/** The FRAME's rect on canvas, or null while the layout is not applied. */
 	Rectangle layoutBounds()
 	{
 		return mapBounds;
+	}
+
+	/**
+	 * The rect the map is actually painted in. Identical to the frame at full width; inset
+	 * inside it at native width. The compass rides on this so it stays on the map's corner
+	 * rather than floating in the padding beside it.
+	 */
+	Rectangle mapRect()
+	{
+		Rectangle r = mapDrawRect;
+		return r != null ? r : mapBounds;
 	}
 
 	/** Screen rect of the painted compass, given the map's bounds. */
@@ -825,7 +853,11 @@ public class MysticHudPlugin extends Plugin
 		if (inner != null)
 		{
 			inner.setWidthMode(net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE);
-			dirty |= set(inner, dx + (blockW - INV_W), targetY, INV_W, cfgMapH());
+			// inset by mapInset so a native-width map sits centred in the full-width frame:
+			// the engine draws and clicks against THIS container, so centring it here is
+			// what puts the map's centre on the frame's centre
+			dirty |= set(inner, dx + (blockW - INV_W) + mapInset(), targetY,
+				cfgMapW(), cfgMapH());
 			// the stock UI guards the minimap with invisible MAP_NOCLICK shims so clicks
 			// cannot fall through to the full-bleed 3D scene; our relocated block has no
 			// shim under it, so the containers themselves must stop the fall-through
@@ -947,10 +979,16 @@ public class MysticHudPlugin extends Plugin
 
 		// nudge: aligns all of OUR chrome onto wherever the engine actually paints the
 		// map, tuned live by eye; the container itself stays put
-		int visX = innerLoc.getX() + config.frameNudgeX();
+		// the container is now the MAP's rect, which may be inset inside the frame. the
+		// frame, the orb row and everything else we paint still span the full width, so
+		// visX is walked back out to the frame's left edge and the map's own rect is
+		// published separately for the things that must sit on the map itself
+		int inset = mapInset();
+		int visX = innerLoc.getX() - inset + config.frameNudgeX();
 		int visY = innerLoc.getY() + config.frameNudgeY();
-		mapW = innerW.getWidth();
+		mapW = INV_W;
 		int mapH = innerW.getHeight();
+		mapDrawRect = new Rectangle(visX + inset, visY, cfgMapW(), mapH);
 		int rowCanvasY = visY + mapH + ROW_GAP;
 		int slot = slotWidth();
 		int[] order = orbChildren();
@@ -992,7 +1030,8 @@ public class MysticHudPlugin extends Plugin
 			{
 				// right-anchored: originalX is measured from the host's right edge.
 				// mirrors the compass across the map's diagonal
-				int desiredX = visX + mapW - 30 - ORB_INSET_X;
+				// the map's own right edge, not the frame's, so the orb stays on the map
+				int desiredX = visX + inset + cfgMapW() - 30 - ORB_INSET_X;
 				if (set(world, hx + host.getWidth() - 30 - desiredX,
 					visY + mapH - 30 - ORB_INSET - hy, null, null))
 				{

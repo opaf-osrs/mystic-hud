@@ -54,6 +54,17 @@ public interface MysticHudConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "nativeMapWidth",
+		name = "True map width",
+		description = "The engine only ever paints the minimap 152 wide, so a frame drawn at the inventory's 204 leaves black on the east side and puts the map's real centre 26px left of the frame's. That gap is what sends minimap walk-clicks sideways. On: the map is its true width, centred in the frame, so clicks land where you point and the black strip goes.",
+		position = 2
+	)
+	default boolean nativeMapWidth()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "mapOutline",
 		name = "Map outline",
 		description = "Draw a UI frame around the rectangular minimap",

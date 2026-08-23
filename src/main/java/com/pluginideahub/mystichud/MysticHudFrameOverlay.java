@@ -176,7 +176,7 @@ public class MysticHudFrameOverlay extends Overlay
 
 		if (config.showCompass())
 		{
-			Rectangle cb = MysticHudPlugin.compassBounds(mb);
+			Rectangle cb = MysticHudPlugin.compassBounds(plugin.mapRect());
 			compass(g, cb.x, cb.y);
 		}
 
