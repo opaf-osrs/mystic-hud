@@ -219,7 +219,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b52";
+	static final String BUILD_TAG = "b54";
 
 	@Inject
 	private Client client;
@@ -260,6 +260,7 @@ public class MysticHudPlugin extends Plugin
 	private volatile int clickCanvasX, clickCanvasY;
 	private volatile java.awt.Point clickInMap;
 	private volatile WorldPoint clickPlayerPos;
+	private volatile int clickYaw;
 	private volatile int clickPendingTicks = -1;
 	private volatile String clickDiag = "";
 
@@ -483,6 +484,7 @@ public class MysticHudPlugin extends Plugin
 			clickCanvasY = canvasY;
 			clickInMap = new java.awt.Point(mapX, mapY);
 			clickPlayerPos = local.getWorldLocation();
+			clickYaw = client.getCameraYaw();
 			clickPendingTicks = 2;
 		}
 		catch (Exception ex)
@@ -510,6 +512,7 @@ public class MysticHudPlugin extends Plugin
 			clickDiag = "click canvas=(" + clickCanvasX + "," + clickCanvasY + ")"
 				+ " inMap=" + clickInMap
 				+ " mapBounds=" + mapBounds
+				+ " yaw=" + clickYaw
 				+ " playerPos=" + clickPlayerPos
 				+ " dest=" + dest;
 			log.debug("MHUD {}", clickDiag);
@@ -784,7 +787,10 @@ public class MysticHudPlugin extends Plugin
 			return;
 		}
 		// the mask widget just needs to cover the container so the transparent mask
-		// override kills the circle everywhere
+		// override kills the circle everywhere.
+		// NOT native width here: shrinking this to NATIVE_MAP (b53, on a theory that the
+		// click centre ignored the declared width) moved the drawn map out of the frame
+		// and did not change the offset at all. the draw really does follow this width.
 		dirty |= set(map, 0, 0, cfgMapW(), cfgMapH());
 		if (config.squareMinimap())
 		{
