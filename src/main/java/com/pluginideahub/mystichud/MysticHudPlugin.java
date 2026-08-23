@@ -215,7 +215,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b49";
+	static final String BUILD_TAG = "b48";
 
 	@Inject
 	private Client client;
@@ -362,16 +362,7 @@ public class MysticHudPlugin extends Plugin
 	private final Map<Widget, int[]> saved = new HashMap<>();
 	private final Map<Widget, Boolean> savedHidden = new HashMap<>();
 
-	// the game's own minimap zoom, captured so shutDown can hand it back. this is the
-	// flag "ZOOM IS NEVER TOUCHED" below used to warn about: our own code never turns it
-	// on, but RuneLite's separate core Minimap plugin owns the same flag through its own
-	// scroll-to-zoom setting, and that plugin can flip it independently of anything we do.
-	// with it on, the walk-click math stops agreeing with our custom-width map even
-	// though the draw still looks right, which is the "flag lands off to the side" bug
-	// coming back with no Mystic HUD change involved at all. so this is no longer passive:
-	// it is forced off on every frame we are active, and handed back untouched on shutdown.
-	private boolean zoomSaved;
-	private boolean savedZoomEnabled;
+	// the game's own minimap zoom, captured so shutDown can hand it back
 
 	// the transparent minimap mask override; its hole IS the whole rectangle
 	// sprite 1178, RESIZE_MAP_MASK: the engine reads this to decide how much minimap to draw
@@ -430,7 +421,6 @@ public class MysticHudPlugin extends Plugin
 			mapBounds = null;
 			maskSaved = false;
 			mask = null;
-			zoomSaved = false;
 			lastMapDx = Integer.MIN_VALUE;
 			lastMapY = Integer.MIN_VALUE;
 		}
@@ -582,19 +572,8 @@ public class MysticHudPlugin extends Plugin
 			offY = config.posY();
 		}
 
-		// force the native minimap zoom flag off every frame we are active. it is not
-		// ours to leave alone: RuneLite's own Minimap plugin can turn it on independently
-		// of anything Mystic HUD does, and once it is on the walk-click math stops
-		// agreeing with our widened map even though the draw still looks correct
-		if (!zoomSaved)
-		{
-			savedZoomEnabled = client.isMinimapZoom();
-			zoomSaved = true;
-		}
-		if (client.isMinimapZoom())
-		{
-			client.setMinimapZoom(false);
-		}
+		// ZOOM IS NEVER TOUCHED, not even the enable flag: enabling it is the only
+		// click-related change in the build where the walk offset returned
 
 		Widget inv = top(INV_PANEL);
 		boolean invOpen = inv != null && !inv.isHidden() && inv.getHeight() > 0;
@@ -998,11 +977,6 @@ public class MysticHudPlugin extends Plugin
 		for (Map.Entry<Widget, Boolean> e : savedHidden.entrySet())
 		{
 			e.getKey().setHidden(e.getValue());
-		}
-		if (zoomSaved)
-		{
-			client.setMinimapZoom(savedZoomEnabled);
-			zoomSaved = false;
 		}
 		clearMaskOverride();
 		Widget innerW = top(MINIMAP_INNER);
