@@ -212,6 +212,18 @@ public class MysticHudFrameOverlay extends Overlay
 				g.drawString(line, mb.x + 40, ly);
 				ly += 10;
 			}
+
+			// TEMPORARY click diagnostic: click a spot on the map with debug on, wait a
+			// tick, read what canvas position and world destination the engine actually
+			// used. printed below the map rather than over it so it is not covered.
+			String diag = plugin.clickDiag();
+			if (!diag.isEmpty())
+			{
+				g.setColor(Color.BLACK);
+				g.drawString(diag, mb.x + 1, mb.y + mb.height + rowH + 24);
+				g.setColor(Color.GREEN);
+				g.drawString(diag, mb.x, mb.y + mb.height + rowH + 23);
+			}
 		}
 		return null;
 	}
