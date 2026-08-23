@@ -12,12 +12,8 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.Player;
-import net.runelite.api.coords.LocalPoint;
-import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.GameTick;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -219,7 +215,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b50";
+	static final String BUILD_TAG = "b48";
 
 	@Inject
 	private Client client;
@@ -250,16 +246,6 @@ public class MysticHudPlugin extends Plugin
 	private boolean dragging;
 	private int lastLoggedOffY = Integer.MIN_VALUE;
 	private int grabX, grabY, dragBaseX, dragBaseY;
-
-	// TEMPORARY click diagnostic (debug readout only): where a plain click landed
-	// relative to the map's own bounds versus where the engine actually set the walk
-	// destination, so the offset can be measured instead of guessed at. captured on
-	// click, resolved a couple of ticks later once the destination has registered.
-	private int clickCanvasX, clickCanvasY;
-	private java.awt.Point clickInMap;
-	private WorldPoint clickPlayerPos;
-	private int clickPendingTicks = -1;
-	private volatile String clickDiag = "";
 
 	private final MouseAdapter mouse = new MouseAdapter()
 	{
@@ -295,21 +281,6 @@ public class MysticHudPlugin extends Plugin
 				dragBaseX = offX;
 				dragBaseY = offY;
 				e.consume();
-			}
-			// TEMPORARY: capture a plain walk-click so it can be compared against where
-			// the engine actually sends the player, see readClickDestination()
-			else if (config.orbDebug() && b != null && e.getButton() == MouseEvent.BUTTON1
-				&& !e.isShiftDown() && b.contains(e.getPoint()))
-			{
-				Player local = client.getLocalPlayer();
-				if (local != null)
-				{
-					clickCanvasX = e.getX();
-					clickCanvasY = e.getY();
-					clickInMap = new java.awt.Point(e.getX() - b.x, e.getY() - b.y);
-					clickPlayerPos = local.getWorldLocation();
-					clickPendingTicks = 2;
-				}
 			}
 			return e;
 		}
@@ -468,34 +439,6 @@ public class MysticHudPlugin extends Plugin
 	{
 		// fires for varps as well as varbits, so this one subscription covers all of it
 		readOrbStates();
-	}
-
-	@Subscribe
-	public void onGameTick(GameTick e)
-	{
-		if (clickPendingTicks < 0)
-		{
-			return;
-		}
-		if (clickPendingTicks-- > 0)
-		{
-			return;
-		}
-		LocalPoint destLocal = client.getLocalDestinationLocation();
-		String dest = destLocal == null ? "null"
-			: WorldPoint.fromLocal(client, destLocal).toString();
-		clickDiag = "click canvas=(" + clickCanvasX + "," + clickCanvasY + ")"
-			+ " inMap=" + clickInMap
-			+ " mapBounds=" + mapBounds
-			+ " playerPos=" + clickPlayerPos
-			+ " dest=" + dest;
-		log.debug("MHUD {}", clickDiag);
-		clickPendingTicks = -1;
-	}
-
-	String clickDiag()
-	{
-		return clickDiag;
 	}
 
 	@Subscribe
