@@ -211,7 +211,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b67";
+	static final String BUILD_TAG = "b68";
 
 	@Inject
 	private Client client;
@@ -391,13 +391,19 @@ public class MysticHudPlugin extends Plugin
 
 	// the game's own minimap zoom, captured so shutDown can hand it back
 
-	// the transparent minimap mask override; its hole IS the whole rectangle
-	// sprite 1178, RESIZE_MAP_MASK: the engine reads this to decide how much minimap to draw
+	// the transparent minimap mask override; its hole IS the whole rectangle.
+	// 1178 is the draw mask. The client layout script also swaps in 2154/3513 as
+	// resize click masks, so all three must be the same size or 204px visual maps can
+	// still click against the old stock shape.
 	static final int MASK_SPRITE = 1178;
+	static final int CLICK_MASK_SPRITE = 2154;
+	static final int BOND_CLICK_MASK_SPRITE = 3513;
+	static final int[] MAP_MASK_SPRITES = {
+		MASK_SPRITE, CLICK_MASK_SPRITE, BOND_CLICK_MASK_SPRITE
+	};
+	private final Map<Integer, net.runelite.api.SpritePixels> previousMasks = new HashMap<>();
 	private net.runelite.api.SpritePixels mask;
-	private net.runelite.api.SpritePixels previousMask;
 	private int maskW, maskH, maskVisH;
-	private boolean maskSaved;
 
 	@Provides
 	MysticHudConfig provideConfig(ConfigManager configManager)
@@ -446,7 +452,7 @@ public class MysticHudPlugin extends Plugin
 			saved.clear();
 			savedHidden.clear();
 			mapBounds = null;
-			maskSaved = false;
+			previousMasks.clear();
 			mask = null;
 			dumpedGeometry = false;
 		}
@@ -780,16 +786,10 @@ public class MysticHudPlugin extends Plugin
 		return config.nativeMapWidth() ? NATIVE_MAP : INV_W;
 	}
 
-	/**
-	 * How far the map container sits to the right of the frame. At native width it is the
-	 * padding that centres the map in the frame. At full width it is the click-alignment
-	 * shift: the engine centres clicks on where it paints the player, which is NOT the
-	 * centre of a map painted wider than native, so sliding the container right moves the
-	 * player onto the frame's centre and the clicks with it.
-	 */
+	/** Left padding that centres a native-width map inside the full-width frame. */
 	private int mapInset()
 	{
-		return config.nativeMapWidth() ? (INV_W - cfgMapW()) / 2 : config.mapShiftX();
+		return (INV_W - cfgMapW()) / 2;
 	}
 
 	private int cfgMapH()
@@ -1009,15 +1009,7 @@ public class MysticHudPlugin extends Plugin
 		dirty |= set(map, 0, 0, cfgMapW(), cfgMapH());
 		if (config.squareMinimap())
 		{
-			// THE MASK IS THE CENTRING, and it is deliberately NOT the container's width.
-			// sliding the container moved the map and took the click area with it, error
-			// unchanged, so draw and clicks are bound together and the mismatch is inside
-			// the map: painted wide, the player is drawn centred in 204 (at +102) while
-			// clicks still resolve against native centre (+76). at the mask's native
-			// width the engine centres on +76 for BOTH, so they agree and the map can
-			// still paint the full container width. that also matches the map caleb
-			// remembers, weighted west with more showing to the east.
-			overrideMask(config.maskNative() ? NATIVE_MAP : cfgMapW(), cfgMapH());
+			overrideMask(cfgMapW(), cfgMapH());
 		}
 		else
 		{
@@ -1177,11 +1169,9 @@ public class MysticHudPlugin extends Plugin
 	}
 
 	/**
-	 * The engine sizes the minimap draw from mask sprite 1178, NOT from the widget, so
-	 * this is what actually controls how much map is rendered. It must go through the
-	 * GLOBAL sprite override keyed by sprite id: the widget-keyed table is not consulted
-	 * on this path, and routing it there left the stock 152x152 mask in force, which is
-	 * why the map ignored the height slider and spilled past its frame.
+	 * The engine sizes the minimap from global mask sprites, not just from the widget.
+	 * The draw mask and click masks must share the same rectangular dimensions, or the
+	 * map can look 204px wide while walk clicks still resolve against the old stock mask.
 	 */
 	private void overrideMask(int w, int h)
 	{
@@ -1197,14 +1187,21 @@ public class MysticHudPlugin extends Plugin
 			maskW = w;
 			maskH = h;
 		}
-		if (overrides.get(MASK_SPRITE) != mask)
+		boolean changed = false;
+		for (int sprite : MAP_MASK_SPRITES)
 		{
-			if (!maskSaved)
+			if (overrides.get(sprite) != mask)
 			{
-				previousMask = overrides.get(MASK_SPRITE);
-				maskSaved = true;
+				if (!previousMasks.containsKey(sprite))
+				{
+					previousMasks.put(sprite, overrides.get(sprite));
+				}
+				overrides.put(sprite, mask);
+				changed = true;
 			}
-			overrides.put(MASK_SPRITE, mask);
+		}
+		if (changed)
+		{
 			// the client caches widget sprites after first draw; without this reset a
 			// relog or resource-pack refresh re-caches the circle and the square is lost
 			client.getWidgetSpriteCache().reset();
@@ -1213,25 +1210,27 @@ public class MysticHudPlugin extends Plugin
 
 	private void clearMaskOverride()
 	{
-		if (!maskSaved)
+		if (previousMasks.isEmpty())
 		{
 			return;
 		}
 		Map<Integer, net.runelite.api.SpritePixels> overrides = client.getSpriteOverrides();
 		if (overrides != null)
 		{
-			if (previousMask != null)
+			for (Map.Entry<Integer, net.runelite.api.SpritePixels> e : previousMasks.entrySet())
 			{
-				overrides.put(MASK_SPRITE, previousMask);
-			}
-			else
-			{
-				overrides.remove(MASK_SPRITE);
+				if (e.getValue() != null)
+				{
+					overrides.put(e.getKey(), e.getValue());
+				}
+				else
+				{
+					overrides.remove(e.getKey());
+				}
 			}
 			client.getWidgetSpriteCache().reset();
 		}
-		maskSaved = false;
-		previousMask = null;
+		previousMasks.clear();
 		mask = null;
 	}
 

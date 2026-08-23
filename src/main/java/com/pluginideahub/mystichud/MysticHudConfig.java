@@ -60,41 +60,12 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "trueMapWidth",
 		name = "True map width",
-		description = "The engine only ever paints the minimap 152 wide, so a frame drawn at the inventory's 204 leaves black on the east side and puts the map's real centre 26px left of the frame's. That gap is what sends minimap walk-clicks sideways. On: the map is its true width, centred in the frame, so clicks land where you point and the black strip goes.",
+		description = "Shrink the map to its native 152 and centre it in the frame. Not needed for click accuracy any more: that was the three mask sprites, see MASK_SPRITE. Leaves padding either side.",
 		position = 2
 	)
 	default boolean nativeMapWidth()
 	{
 		return false;
-	}
-
-	// the click error measured as a CONSTANT 10 tiles at two very different click
-	// positions, so it is a fixed pixel shift and nothing to do with scale or zoom. the
-	// engine centres clicks on where it draws the player, which is not the centre of a
-	// map painted wider than native. shifting the container relative to the frame moves
-	// the player onto the frame's centre; this is that shift, left literal so the exact
-	// number can be found by eye rather than guessed at.
-	@Range(min = -60, max = 60)
-	@ConfigItem(
-		keyName = "mapShiftX",
-		name = "Click alignment",
-		description = "Shifts the map sideways inside its frame until minimap clicks land where you point. The map paints from wherever it starts, so a positive value leaves that many pixels of frame bare on the left. 0 is no shift.",
-		position = 2
-	)
-	default int mapShiftX()
-	{
-		return 0;
-	}
-
-	@ConfigItem(
-		keyName = "maskNative",
-		name = "Native mask",
-		description = "Keeps the minimap mask at its native 152 while the map still paints the full container width. The mask is what the engine centres on, so at native the drawn player and the click maths agree and clicks land true; the map stays full width but you sit left of its middle, seeing further east than west.",
-		position = 2
-	)
-	default boolean maskNative()
-	{
-		return true;
 	}
 
 	@ConfigItem(
