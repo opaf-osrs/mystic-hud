@@ -88,6 +88,8 @@ public class MysticHudPlugin extends Plugin
 	// moved" and never revalidates, leaving icons and numbers unrendered until something
 	// else nudges the layout
 	private int settle;
+	// last logged centre gap, so the probe only speaks when it changes
+	private int lastGap = Integer.MIN_VALUE;
 	// current orb row height; compresses when the window is short
 	private int rowH = ROW_H;
 	// current map width; insets when engulfed by the inventory panel
@@ -208,7 +210,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b63";
+	static final String BUILD_TAG = "b64";
 
 	@Inject
 	private Client client;
@@ -563,11 +565,18 @@ public class MysticHudPlugin extends Plugin
 					net.runelite.api.Point il = innerW == null ? null : innerW.getCanvasLocation();
 					int engineCx = il == null ? -1 : il.getX() + NATIVE_MAP / 2;
 					int frameCx = mb.x + mb.width / 2;
-					log.debug("MHUD probe frameCentreX={} engineClickCentreX={} GAP={} "
-							+ "innerCanvasX={} innerW={} mb={} native={} yaw={}",
-						frameCx, engineCx, engineCx < 0 ? 0 : frameCx - engineCx,
-						il == null ? -1 : il.getX(), innerW == null ? -1 : innerW.getWidth(),
-						mb, config.nativeMapWidth(), client.getCameraYaw());
+					// only when it CHANGES: at a line a tick this drowned the log and the
+					// value is constant by nature, so a change is the only news in it
+					int gap = engineCx < 0 ? 0 : frameCx - engineCx;
+					if (gap != lastGap)
+					{
+						lastGap = gap;
+						log.debug("MHUD probe frameCentreX={} engineClickCentreX={} GAP={} "
+								+ "innerCanvasX={} innerW={} mb={} trueWidth={} yaw={}",
+							frameCx, engineCx, gap,
+							il == null ? -1 : il.getX(), innerW == null ? -1 : innerW.getWidth(),
+							mb, config.nativeMapWidth(), client.getCameraYaw());
+					}
 				}
 			}
 		}

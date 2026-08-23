@@ -53,8 +53,12 @@ public interface MysticHudConfig extends Config
 		return true;
 	}
 
+	// keyName deliberately NOT "nativeMapWidth": that key already has a stored false in
+	// the profile from trying the toggle, and a stored value beats a changed default, so
+	// the fix stayed switched off even after it became the default. a fresh key has
+	// nothing stored against it and actually takes the default.
 	@ConfigItem(
-		keyName = "nativeMapWidth",
+		keyName = "trueMapWidth",
 		name = "True map width",
 		description = "The engine only ever paints the minimap 152 wide, so a frame drawn at the inventory's 204 leaves black on the east side and puts the map's real centre 26px left of the frame's. That gap is what sends minimap walk-clicks sideways. On: the map is its true width, centred in the frame, so clicks land where you point and the black strip goes.",
 		position = 2
