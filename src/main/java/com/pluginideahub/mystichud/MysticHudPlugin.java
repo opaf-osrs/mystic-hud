@@ -208,7 +208,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b58";
+	static final String BUILD_TAG = "b59";
 
 	@Inject
 	private Client client;
@@ -250,6 +250,8 @@ public class MysticHudPlugin extends Plugin
 	private volatile java.awt.Point clickInMap;
 	private volatile WorldPoint clickPlayerPos;
 	private volatile int clickYaw;
+	private volatile int clickExpDx, clickExpDy;
+	private volatile String clickScale = "n/a";
 	private volatile int clickPendingTicks = -1;
 	private volatile String clickDiag = "";
 
@@ -472,6 +474,53 @@ public class MysticHudPlugin extends Plugin
 			clickInMap = new java.awt.Point(mapX, mapY);
 			clickPlayerPos = local.getWorldLocation();
 			clickYaw = client.getCameraYaw();
+
+			// THE SEARCH HAPPENS HERE, AT CLICK TIME. doing it two ticks later when the
+			// destination is readable meant projecting against a camera that had since
+			// rotated and a player who had since walked, which is why a yaw=0 sample could
+			// report a diagonal pxPerTile. the tile under the cursor has to be resolved
+			// against the frame the cursor was actually in.
+			LocalPoint here = local.getLocalLocation();
+			clickExpDx = 0;
+			clickExpDy = 0;
+			clickScale = "n/a";
+			if (here != null)
+			{
+				long bestD2 = Long.MAX_VALUE;
+				for (int tx = -30; tx <= 30; tx++)
+				{
+					for (int ty = -30; ty <= 30; ty++)
+					{
+						LocalPoint lp = new LocalPoint(here.getX() + tx * 128,
+							here.getY() + ty * 128, client.getTopLevelWorldView());
+						net.runelite.api.Point p =
+							net.runelite.api.Perspective.localToMinimap(client, lp, 10000);
+						if (p == null)
+						{
+							continue;
+						}
+						long ddx = p.getX() - canvasX;
+						long ddy = p.getY() - canvasY;
+						long d2 = ddx * ddx + ddy * ddy;
+						if (d2 < bestD2)
+						{
+							bestD2 = d2;
+							clickExpDx = tx;
+							clickExpDy = ty;
+						}
+					}
+				}
+				net.runelite.api.Point p0 =
+					net.runelite.api.Perspective.localToMinimap(client, here, 10000);
+				net.runelite.api.Point p1 = net.runelite.api.Perspective.localToMinimap(client,
+					new LocalPoint(here.getX() + 128, here.getY(),
+						client.getTopLevelWorldView()), 10000);
+				if (p0 != null && p1 != null)
+				{
+					clickScale = "(" + (p1.getX() - p0.getX())
+						+ "," + (p1.getY() - p0.getY()) + ")";
+				}
+			}
 			clickPendingTicks = 2;
 		}
 		catch (Exception ex)
@@ -514,99 +563,25 @@ public class MysticHudPlugin extends Plugin
 		}
 		try
 		{
+			// the ONLY thing read at resolve time is the destination, which is the one
+			// value that does not exist yet at click time. everything it is compared
+			// against was captured in the click's own frame.
 			LocalPoint destLocal = client.getLocalDestinationLocation();
-			// WHAT THE PLAYER VISUALLY CLICKED, without any trigonometry of ours: walk the
-			// tiles around the player, project each one with the same forward projection
-			// that matches the drawn map (proven by the probe reading DELTA=(0,0)), and
-			// take whichever lands nearest the click. that is the tile under the cursor.
-			// comparing it to where the engine ACTUALLY sent us gives the error in TILES,
-			// already corrected for yaw and zoom because the projection handles both.
-			Player me = client.getLocalPlayer();
-			LocalPoint here = me == null ? null : me.getLocalLocation();
-			String expected = "n/a";
-			String delta = "n/a";
-			int bestDx = 0, bestDy = 0;
-			if (here != null)
-			{
-				long bestD2 = Long.MAX_VALUE;
-				for (int tx = -30; tx <= 30; tx++)
-				{
-					for (int ty = -30; ty <= 30; ty++)
-					{
-						LocalPoint lp = new LocalPoint(
-							here.getX() + tx * 128, here.getY() + ty * 128,
-							client.getTopLevelWorldView());
-						net.runelite.api.Point p =
-							net.runelite.api.Perspective.localToMinimap(client, lp, 10000);
-						if (p == null)
-						{
-							continue;
-						}
-						long ddx = p.getX() - clickCanvasX;
-						long ddy = p.getY() - clickCanvasY;
-						long d2 = ddx * ddx + ddy * ddy;
-						if (d2 < bestD2)
-						{
-							bestD2 = d2;
-							bestDx = tx;
-							bestDy = ty;
-						}
-					}
-				}
-				if (bestD2 != Long.MAX_VALUE && clickPlayerPos != null)
-				{
-					WorldPoint exp = new WorldPoint(clickPlayerPos.getX() + bestDx,
-						clickPlayerPos.getY() + bestDy, clickPlayerPos.getPlane());
-					expected = exp.toString();
-					if (destLocal != null)
-					{
-						WorldPoint act = WorldPoint.fromLocal(client, destLocal);
-						delta = "(" + (act.getX() - exp.getX())
-							+ "," + (act.getY() - exp.getY()) + ")";
-					}
-				}
-			}
-			// everything needed to solve for the engine's own centre and scale, on one
-			// line: click offset from our centre in PIXELS, the tile offset the drawn map
-			// says that is, the tile offset the engine actually used, and how many pixels
-			// one tile spans in the projection. two clicks at different distances from
-			// centre pin down whether the engine's centre is displaced or its scale differs
-			Rectangle mb = mapBounds;
-			String offPx = "n/a";
 			String actTiles = "n/a";
-			String scale = "n/a";
-			if (mb != null)
-			{
-				offPx = "(" + (clickCanvasX - (mb.x + mb.width / 2))
-					+ "," + (clickCanvasY - (mb.y + mb.height / 2)) + ")";
-			}
+			String delta = "n/a";
 			if (destLocal != null && clickPlayerPos != null)
 			{
 				WorldPoint act = WorldPoint.fromLocal(client, destLocal);
-				actTiles = "(" + (act.getX() - clickPlayerPos.getX())
-					+ "," + (act.getY() - clickPlayerPos.getY()) + ")";
+				int adx = act.getX() - clickPlayerPos.getX();
+				int ady = act.getY() - clickPlayerPos.getY();
+				actTiles = "(" + adx + "," + ady + ")";
+				delta = "(" + (adx - clickExpDx) + "," + (ady - clickExpDy) + ")";
 			}
-			if (here != null)
-			{
-				net.runelite.api.Point p0 =
-					net.runelite.api.Perspective.localToMinimap(client, here, 10000);
-				net.runelite.api.Point p1 = net.runelite.api.Perspective.localToMinimap(
-					client, new LocalPoint(here.getX() + 128, here.getY(),
-						client.getTopLevelWorldView()), 10000);
-				if (p0 != null && p1 != null)
-				{
-					scale = "(" + (p1.getX() - p0.getX()) + "," + (p1.getY() - p0.getY()) + ")";
-				}
-			}
-			String dest = destLocal == null ? "null"
-				: WorldPoint.fromLocal(client, destLocal).toString();
 			clickDiag = "click inMap=" + clickInMap
-				+ " offPx=" + offPx
 				+ " yaw=" + clickYaw
-				+ " player=" + clickPlayerPos
-				+ " expTiles=(" + bestDx + "," + bestDy + ")"
+				+ " expTiles=(" + clickExpDx + "," + clickExpDy + ")"
 				+ " actTiles=" + actTiles
-				+ " pxPerTileE=" + scale
+				+ " pxPerTileE=" + clickScale
 				+ " ERROR_TILES=" + delta;
 			log.debug("MHUD {}", clickDiag);
 		}

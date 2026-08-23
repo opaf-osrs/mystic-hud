@@ -16,7 +16,7 @@ repositories {
 	mavenCentral()
 }
 
-def runeLiteVersion = 'latest.release'
+def runeLiteVersion = project.findProperty('rlVersion') ?: 'latest.release'
 def pluginMainClass = 'com.pluginideahub.mystichud.MysticHudTestClient'
 
 // the client at RUNTIME scope, for the standalone jar only. building that jar off the
