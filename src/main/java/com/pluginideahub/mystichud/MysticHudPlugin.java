@@ -88,6 +88,17 @@ public class MysticHudPlugin extends Plugin
 	private int rowH = ROW_H;
 	// current map width; insets when engulfed by the inventory panel
 	private int mapW = NATIVE_MAP;
+	// last screen position actually applied to the map container, so a move can be told
+	// apart from a steady-state frame. contentType 1338's own click-to-walk math reads
+	// off a cache keyed by this widget, the same one overrideMask() resets for the DRAWN
+	// circle; that reset only fired on a mask size change, never on a plain reposition
+	// (attach toggling, drag, window resize, inventory open/close shifting the anchor),
+	// so the walk destination kept mapping against wherever the map cached last, one full
+	// generation of moves behind the visible block. this is the recurring "flag lands
+	// off to the side" bug: fixed by resetting the same cache on every actual move, not
+	// only when the mask itself changes.
+	private int lastMapDx = Integer.MIN_VALUE;
+	private int lastMapY = Integer.MIN_VALUE;
 
 	int rowH()
 	{
@@ -204,7 +215,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b47";
+	static final String BUILD_TAG = "b48";
 
 	@Inject
 	private Client client;
@@ -410,6 +421,8 @@ public class MysticHudPlugin extends Plugin
 			mapBounds = null;
 			maskSaved = false;
 			mask = null;
+			lastMapDx = Integer.MIN_VALUE;
+			lastMapY = Integer.MIN_VALUE;
 		}
 		if (e.getGameState() == GameState.LOGGED_IN)
 		{
@@ -658,6 +671,16 @@ public class MysticHudPlugin extends Plugin
 			// cannot fall through to the full-bleed 3D scene; our relocated block has no
 			// shim under it, so the containers themselves must stop the fall-through
 			inner.setNoClickThrough(true);
+		}
+
+		// the map moved: drop the widget sprite cache so contentType 1338 recomputes its
+		// draw AND its click-to-world mapping against where the widget actually is now,
+		// instead of leaving walk-clicks resolving against the last cached position
+		if (dx != lastMapDx || targetY != lastMapY)
+		{
+			lastMapDx = dx;
+			lastMapY = targetY;
+			client.getWidgetSpriteCache().reset();
 		}
 		Widget host = top(ORB_HOST);
 		if (host != null)
