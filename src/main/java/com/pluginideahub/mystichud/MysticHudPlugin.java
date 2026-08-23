@@ -208,7 +208,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b61";
+	static final String BUILD_TAG = "b62";
 
 	@Inject
 	private Client client;
@@ -634,13 +634,21 @@ public class MysticHudPlugin extends Plugin
 			}
 			int[] orig = saved.get(w);
 			net.runelite.api.Point loc = w.getCanvasLocation();
-			log.debug("MHUD geom {} stockOrig={} appliedOrig=({},{},{}x{}) canvas=({},{},{}x{})",
+			// position/size MODES included: map30 landed 53px right of the container we
+			// put it at (0,0) in, so the values we set are being reinterpreted by the
+			// widget's own layout mode rather than taken literally
+			log.debug("MHUD geom {} stockOrig={} appliedOrig=({},{},{}x{}) canvas=({},{},{}x{})"
+					+ " rel=({},{}) modes x={} y={} w={} h={} parent={}",
 				names[i],
 				orig == null ? "unsaved"
 					: "(" + orig[0] + "," + orig[1] + "," + orig[2] + "x" + orig[3] + ")",
 				w.getOriginalX(), w.getOriginalY(), w.getOriginalWidth(), w.getOriginalHeight(),
 				loc == null ? -1 : loc.getX(), loc == null ? -1 : loc.getY(),
-				w.getWidth(), w.getHeight());
+				w.getWidth(), w.getHeight(),
+				w.getRelativeX(), w.getRelativeY(),
+				w.getXPositionMode(), w.getYPositionMode(),
+				w.getWidthMode(), w.getHeightMode(),
+				Integer.toHexString(w.getParentId()));
 		}
 		log.debug("MHUD geom canvas={}x{} mapBounds={} mapDrawRect={}",
 			client.getCanvasWidth(), client.getCanvasHeight(), mapBounds, mapDrawRect);
@@ -655,17 +663,30 @@ public class MysticHudPlugin extends Plugin
 	@Subscribe
 	public void onMenuOptionClicked(net.runelite.api.events.MenuOptionClicked e)
 	{
-		if (!config.orbDebug() || e.getMenuAction() != net.runelite.api.MenuAction.WALK)
+		if (!config.orbDebug())
 		{
 			return;
 		}
+		// NOT filtered to WALK: a minimap click turned out not to raise that action at all,
+		// so the filter hid the very thing it was added to catch. log every action taken
+		// with the cursor over the map and let the data say which one the minimap uses.
 		Rectangle mb = mapBounds;
 		net.runelite.api.Point mouse = client.getMouseCanvasPosition();
-		boolean onMap = mb != null && mouse != null && mb.contains(mouse.getX(), mouse.getY());
-		log.debug("MHUD walkmenu param0={} param1={} id={} mouse=({},{}) onMap={} mb={} yaw={}",
-			e.getParam0(), e.getParam1(), e.getId(),
-			mouse == null ? -1 : mouse.getX(), mouse == null ? -1 : mouse.getY(),
-			onMap, mb, client.getCameraYaw());
+		if (mb == null || mouse == null || !mb.contains(mouse.getX(), mouse.getY()))
+		{
+			return;
+		}
+		Widget mapWidget = top(MINIMAP_MAP);
+		net.runelite.api.Point mapLoc = mapWidget == null ? null : mapWidget.getCanvasLocation();
+		log.debug("MHUD menu action={} param0={} param1={} id={} widgetId={} opt='{}'"
+				+ " mouse=({},{}) mb={} mapWidgetCanvas=({},{},{}x{}) yaw={}",
+			e.getMenuAction(), e.getParam0(), e.getParam1(), e.getId(), e.getWidgetId(),
+			e.getMenuOption(),
+			mouse.getX(), mouse.getY(), mb,
+			mapLoc == null ? -1 : mapLoc.getX(), mapLoc == null ? -1 : mapLoc.getY(),
+			mapWidget == null ? -1 : mapWidget.getWidth(),
+			mapWidget == null ? -1 : mapWidget.getHeight(),
+			client.getCameraYaw());
 	}
 
 	@Subscribe
