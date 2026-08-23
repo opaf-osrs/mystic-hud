@@ -208,7 +208,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b60";
+	static final String BUILD_TAG = "b61";
 
 	@Inject
 	private Client client;
@@ -445,6 +445,7 @@ public class MysticHudPlugin extends Plugin
 			mapBounds = null;
 			maskSaved = false;
 			mask = null;
+			dumpedGeometry = false;
 		}
 		if (e.getGameState() == GameState.LOGGED_IN)
 		{
@@ -538,6 +539,12 @@ public class MysticHudPlugin extends Plugin
 		// THE MEASUREMENT, logged as well as painted: where the engine puts the player's
 		// own dot (always the real minimap's centre) against the centre of the rect we
 		// paint. the difference is the constant offset, read directly.
+		if (config.orbDebug() && !dumpedGeometry && mapBounds != null)
+		{
+			dumpedGeometry = true;
+			dumpGeometry();
+		}
+
 		if (config.orbDebug())
 		{
 			Rectangle mb = mapBounds;
@@ -601,6 +608,64 @@ public class MysticHudPlugin extends Plugin
 	String clickDiag()
 	{
 		return clickDiag;
+	}
+
+	// dumped once per login, not every frame
+	private boolean dumpedGeometry;
+
+	/**
+	 * STOCK versus APPLIED, for every widget we touch. The originals are already sitting in
+	 * the save map so shutDown can put them back, and they were never once looked at: if
+	 * the engine takes minimap clicks against where the map STOCK sits rather than where we
+	 * moved it to, the offset is the difference between these two columns and has been
+	 * readable all along. Printed as canvas rects so it can be compared straight against
+	 * the click measurements.
+	 */
+	private void dumpGeometry()
+	{
+		int[] ids = {MINIMAP_BLOCK, MINIMAP_INNER, MINIMAP_MAP, ORB_HOST, INV_PANEL};
+		String[] names = {"block92", "inner22", "map30", "host33", "inv96"};
+		for (int i = 0; i < ids.length; i++)
+		{
+			Widget w = top(ids[i]);
+			if (w == null)
+			{
+				continue;
+			}
+			int[] orig = saved.get(w);
+			net.runelite.api.Point loc = w.getCanvasLocation();
+			log.debug("MHUD geom {} stockOrig={} appliedOrig=({},{},{}x{}) canvas=({},{},{}x{})",
+				names[i],
+				orig == null ? "unsaved"
+					: "(" + orig[0] + "," + orig[1] + "," + orig[2] + "x" + orig[3] + ")",
+				w.getOriginalX(), w.getOriginalY(), w.getOriginalWidth(), w.getOriginalHeight(),
+				loc == null ? -1 : loc.getX(), loc == null ? -1 : loc.getY(),
+				w.getWidth(), w.getHeight());
+		}
+		log.debug("MHUD geom canvas={}x{} mapBounds={} mapDrawRect={}",
+			client.getCanvasWidth(), client.getCanvasHeight(), mapBounds, mapDrawRect);
+	}
+
+	/**
+	 * The engine's OWN answer, taken from the menu entry rather than from where the player
+	 * ended up. getLocalDestinationLocation is the PATHED destination, so a wall between
+	 * the player and the clicked tile silently moves it; the walk entry carries what the
+	 * engine actually resolved the cursor to, before any of that.
+	 */
+	@Subscribe
+	public void onMenuOptionClicked(net.runelite.api.events.MenuOptionClicked e)
+	{
+		if (!config.orbDebug() || e.getMenuAction() != net.runelite.api.MenuAction.WALK)
+		{
+			return;
+		}
+		Rectangle mb = mapBounds;
+		net.runelite.api.Point mouse = client.getMouseCanvasPosition();
+		boolean onMap = mb != null && mouse != null && mb.contains(mouse.getX(), mouse.getY());
+		log.debug("MHUD walkmenu param0={} param1={} id={} mouse=({},{}) onMap={} mb={} yaw={}",
+			e.getParam0(), e.getParam1(), e.getId(),
+			mouse == null ? -1 : mouse.getX(), mouse == null ? -1 : mouse.getY(),
+			onMap, mb, client.getCameraYaw());
 	}
 
 	@Subscribe
