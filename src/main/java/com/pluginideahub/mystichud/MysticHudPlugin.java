@@ -90,6 +90,7 @@ public class MysticHudPlugin extends Plugin
 	private int settle;
 	// last logged centre gap, so the probe only speaks when it changes
 	private int lastGap = Integer.MIN_VALUE;
+	private String lastMaskState = "";
 	// current orb row height; compresses when the window is short
 	private int rowH = ROW_H;
 	// current map width; insets when engulfed by the inventory panel
@@ -210,7 +211,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b64";
+	static final String BUILD_TAG = "b65";
 
 	@Inject
 	private Client client;
@@ -565,17 +566,30 @@ public class MysticHudPlugin extends Plugin
 					net.runelite.api.Point il = innerW == null ? null : innerW.getCanvasLocation();
 					int engineCx = il == null ? -1 : il.getX() + NATIVE_MAP / 2;
 					int frameCx = mb.x + mb.width / 2;
-					// only when it CHANGES: at a line a tick this drowned the log and the
-					// value is constant by nature, so a change is the only news in it
+					// THE MASK, which is what the notes say the engine sizes the minimap
+					// from. if ours is being replaced by a 152-wide one (the pack, or a
+					// cache reset putting the stock sprite back) the draw stays wide off
+					// the container while the click maths falls back to native, which is a
+					// 26px offset on a full-width map: exactly the symptom.
+					// engineCx below is NOT measured, it is innerCanvasX + native/2, ie an
+					// assumption written out. do not read a gap off it as evidence.
+					Map<Integer, net.runelite.api.SpritePixels> ov = client.getSpriteOverrides();
+					net.runelite.api.SpritePixels cur = ov == null ? null : ov.get(MASK_SPRITE);
+					String maskState = cur == null ? "ABSENT"
+						: (cur == mask ? "ours" : "FOREIGN") + " " + cur.getWidth() + "x"
+							+ cur.getHeight() + " max" + cur.getMaxWidth() + "x"
+							+ cur.getMaxHeight() + " off(" + cur.getOffsetX() + ","
+							+ cur.getOffsetY() + ")";
 					int gap = engineCx < 0 ? 0 : frameCx - engineCx;
-					if (gap != lastGap)
+					if (gap != lastGap || !maskState.equals(lastMaskState))
 					{
 						lastGap = gap;
-						log.debug("MHUD probe frameCentreX={} engineClickCentreX={} GAP={} "
-								+ "innerCanvasX={} innerW={} mb={} trueWidth={} yaw={}",
-							frameCx, engineCx, gap,
+						lastMaskState = maskState;
+						log.debug("MHUD probe frameCentreX={} assumedCx={} innerCanvasX={} "
+								+ "innerW={} mask=[{}] wantMask={}x{} mb={} trueWidth={}",
+							frameCx, engineCx,
 							il == null ? -1 : il.getX(), innerW == null ? -1 : innerW.getWidth(),
-							mb, config.nativeMapWidth(), client.getCameraYaw());
+							maskState, maskW, maskH, mb, config.nativeMapWidth());
 					}
 				}
 			}
