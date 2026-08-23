@@ -12,8 +12,12 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.Player;
+import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -215,7 +219,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b51";
+	static final String BUILD_TAG = "b52";
 
 	@Inject
 	private Client client;
@@ -246,6 +250,18 @@ public class MysticHudPlugin extends Plugin
 	private boolean dragging;
 	private int lastLoggedOffY = Integer.MIN_VALUE;
 	private int grabX, grabY, dragBaseX, dragBaseY;
+
+	// TEMPORARY click diagnostic (debug readout only). take 2: the first attempt read
+	// client state directly on the input thread inside mousePressed and broke walk-clicks
+	// outright, most likely an exception there aborting the AWT dispatch before the
+	// game's own native click handling ran. this version does nothing but arithmetic on
+	// the input thread; every client/widget read is deferred to the client thread via
+	// clientThread.invokeLater, same as the compass click already does for setCameraYawTarget.
+	private volatile int clickCanvasX, clickCanvasY;
+	private volatile java.awt.Point clickInMap;
+	private volatile WorldPoint clickPlayerPos;
+	private volatile int clickPendingTicks = -1;
+	private volatile String clickDiag = "";
 
 	private final MouseAdapter mouse = new MouseAdapter()
 	{
@@ -281,6 +297,19 @@ public class MysticHudPlugin extends Plugin
 				dragBaseX = offX;
 				dragBaseY = offY;
 				e.consume();
+			}
+			// TEMPORARY: capture a plain walk-click for the debug readout, without
+			// touching the click itself. no e.consume(), no client/widget reads on this
+			// thread: only int arithmetic, so nothing here can affect whether the native
+			// walk-click still fires right after we return
+			else if (config.orbDebug() && b != null && e.getButton() == MouseEvent.BUTTON1
+				&& !e.isShiftDown() && b.contains(e.getPoint()))
+			{
+				int cx = e.getX();
+				int cy = e.getY();
+				int mx = cx - b.x;
+				int my = cy - b.y;
+				clientThread.invokeLater(() -> captureClickContext(cx, cy, mx, my));
 			}
 			return e;
 		}
@@ -439,6 +468,65 @@ public class MysticHudPlugin extends Plugin
 	{
 		// fires for varps as well as varbits, so this one subscription covers all of it
 		readOrbStates();
+	}
+
+	private void captureClickContext(int canvasX, int canvasY, int mapX, int mapY)
+	{
+		try
+		{
+			Player local = client.getLocalPlayer();
+			if (local == null)
+			{
+				return;
+			}
+			clickCanvasX = canvasX;
+			clickCanvasY = canvasY;
+			clickInMap = new java.awt.Point(mapX, mapY);
+			clickPlayerPos = local.getWorldLocation();
+			clickPendingTicks = 2;
+		}
+		catch (Exception ex)
+		{
+			log.debug("MHUD click capture failed", ex);
+		}
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick e)
+	{
+		if (clickPendingTicks < 0)
+		{
+			return;
+		}
+		if (clickPendingTicks-- > 0)
+		{
+			return;
+		}
+		try
+		{
+			LocalPoint destLocal = client.getLocalDestinationLocation();
+			String dest = destLocal == null ? "null"
+				: WorldPoint.fromLocal(client, destLocal).toString();
+			clickDiag = "click canvas=(" + clickCanvasX + "," + clickCanvasY + ")"
+				+ " inMap=" + clickInMap
+				+ " mapBounds=" + mapBounds
+				+ " playerPos=" + clickPlayerPos
+				+ " dest=" + dest;
+			log.debug("MHUD {}", clickDiag);
+		}
+		catch (Exception ex)
+		{
+			log.debug("MHUD click resolve failed", ex);
+		}
+		finally
+		{
+			clickPendingTicks = -1;
+		}
+	}
+
+	String clickDiag()
+	{
+		return clickDiag;
 	}
 
 	@Subscribe
