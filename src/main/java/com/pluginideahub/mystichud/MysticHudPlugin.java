@@ -92,17 +92,6 @@ public class MysticHudPlugin extends Plugin
 	private int rowH = ROW_H;
 	// current map width; insets when engulfed by the inventory panel
 	private int mapW = NATIVE_MAP;
-	// last screen position actually applied to the map container, so a move can be told
-	// apart from a steady-state frame. contentType 1338's own click-to-walk math reads
-	// off a cache keyed by this widget, the same one overrideMask() resets for the DRAWN
-	// circle; that reset only fired on a mask size change, never on a plain reposition
-	// (attach toggling, drag, window resize, inventory open/close shifting the anchor),
-	// so the walk destination kept mapping against wherever the map cached last, one full
-	// generation of moves behind the visible block. this is the recurring "flag lands
-	// off to the side" bug: fixed by resetting the same cache on every actual move, not
-	// only when the mask itself changes.
-	private int lastMapDx = Integer.MIN_VALUE;
-	private int lastMapY = Integer.MIN_VALUE;
 
 	int rowH()
 	{
@@ -219,7 +208,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b54";
+	static final String BUILD_TAG = "b58";
 
 	@Inject
 	private Client client;
@@ -451,8 +440,6 @@ public class MysticHudPlugin extends Plugin
 			mapBounds = null;
 			maskSaved = false;
 			mask = null;
-			lastMapDx = Integer.MIN_VALUE;
-			lastMapY = Integer.MIN_VALUE;
 		}
 		if (e.getGameState() == GameState.LOGGED_IN)
 		{
@@ -496,6 +483,27 @@ public class MysticHudPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick e)
 	{
+		// THE MEASUREMENT, logged as well as painted: where the engine puts the player's
+		// own dot (always the real minimap's centre) against the centre of the rect we
+		// paint. the difference is the constant offset, read directly.
+		if (config.orbDebug())
+		{
+			Rectangle mb = mapBounds;
+			Player me = client.getLocalPlayer();
+			if (mb != null && me != null && me.getLocalLocation() != null)
+			{
+				net.runelite.api.Point pm =
+					net.runelite.api.Perspective.localToMinimap(client, me.getLocalLocation(), 10000);
+				if (pm != null)
+				{
+					log.debug("MHUD probe engineCentre=({},{}) ourCentre=({},{}) DELTA=({},{}) mb={} yaw={}",
+						pm.getX(), pm.getY(), mb.x + mb.width / 2, mb.y + mb.height / 2,
+						pm.getX() - (mb.x + mb.width / 2), pm.getY() - (mb.y + mb.height / 2),
+						mb, client.getCameraYaw());
+				}
+			}
+		}
+
 		if (clickPendingTicks < 0)
 		{
 			return;
@@ -507,14 +515,99 @@ public class MysticHudPlugin extends Plugin
 		try
 		{
 			LocalPoint destLocal = client.getLocalDestinationLocation();
+			// WHAT THE PLAYER VISUALLY CLICKED, without any trigonometry of ours: walk the
+			// tiles around the player, project each one with the same forward projection
+			// that matches the drawn map (proven by the probe reading DELTA=(0,0)), and
+			// take whichever lands nearest the click. that is the tile under the cursor.
+			// comparing it to where the engine ACTUALLY sent us gives the error in TILES,
+			// already corrected for yaw and zoom because the projection handles both.
+			Player me = client.getLocalPlayer();
+			LocalPoint here = me == null ? null : me.getLocalLocation();
+			String expected = "n/a";
+			String delta = "n/a";
+			int bestDx = 0, bestDy = 0;
+			if (here != null)
+			{
+				long bestD2 = Long.MAX_VALUE;
+				for (int tx = -30; tx <= 30; tx++)
+				{
+					for (int ty = -30; ty <= 30; ty++)
+					{
+						LocalPoint lp = new LocalPoint(
+							here.getX() + tx * 128, here.getY() + ty * 128,
+							client.getTopLevelWorldView());
+						net.runelite.api.Point p =
+							net.runelite.api.Perspective.localToMinimap(client, lp, 10000);
+						if (p == null)
+						{
+							continue;
+						}
+						long ddx = p.getX() - clickCanvasX;
+						long ddy = p.getY() - clickCanvasY;
+						long d2 = ddx * ddx + ddy * ddy;
+						if (d2 < bestD2)
+						{
+							bestD2 = d2;
+							bestDx = tx;
+							bestDy = ty;
+						}
+					}
+				}
+				if (bestD2 != Long.MAX_VALUE && clickPlayerPos != null)
+				{
+					WorldPoint exp = new WorldPoint(clickPlayerPos.getX() + bestDx,
+						clickPlayerPos.getY() + bestDy, clickPlayerPos.getPlane());
+					expected = exp.toString();
+					if (destLocal != null)
+					{
+						WorldPoint act = WorldPoint.fromLocal(client, destLocal);
+						delta = "(" + (act.getX() - exp.getX())
+							+ "," + (act.getY() - exp.getY()) + ")";
+					}
+				}
+			}
+			// everything needed to solve for the engine's own centre and scale, on one
+			// line: click offset from our centre in PIXELS, the tile offset the drawn map
+			// says that is, the tile offset the engine actually used, and how many pixels
+			// one tile spans in the projection. two clicks at different distances from
+			// centre pin down whether the engine's centre is displaced or its scale differs
+			Rectangle mb = mapBounds;
+			String offPx = "n/a";
+			String actTiles = "n/a";
+			String scale = "n/a";
+			if (mb != null)
+			{
+				offPx = "(" + (clickCanvasX - (mb.x + mb.width / 2))
+					+ "," + (clickCanvasY - (mb.y + mb.height / 2)) + ")";
+			}
+			if (destLocal != null && clickPlayerPos != null)
+			{
+				WorldPoint act = WorldPoint.fromLocal(client, destLocal);
+				actTiles = "(" + (act.getX() - clickPlayerPos.getX())
+					+ "," + (act.getY() - clickPlayerPos.getY()) + ")";
+			}
+			if (here != null)
+			{
+				net.runelite.api.Point p0 =
+					net.runelite.api.Perspective.localToMinimap(client, here, 10000);
+				net.runelite.api.Point p1 = net.runelite.api.Perspective.localToMinimap(
+					client, new LocalPoint(here.getX() + 128, here.getY(),
+						client.getTopLevelWorldView()), 10000);
+				if (p0 != null && p1 != null)
+				{
+					scale = "(" + (p1.getX() - p0.getX()) + "," + (p1.getY() - p0.getY()) + ")";
+				}
+			}
 			String dest = destLocal == null ? "null"
 				: WorldPoint.fromLocal(client, destLocal).toString();
-			clickDiag = "click canvas=(" + clickCanvasX + "," + clickCanvasY + ")"
-				+ " inMap=" + clickInMap
-				+ " mapBounds=" + mapBounds
+			clickDiag = "click inMap=" + clickInMap
+				+ " offPx=" + offPx
 				+ " yaw=" + clickYaw
-				+ " playerPos=" + clickPlayerPos
-				+ " dest=" + dest;
+				+ " player=" + clickPlayerPos
+				+ " expTiles=(" + bestDx + "," + bestDy + ")"
+				+ " actTiles=" + actTiles
+				+ " pxPerTileE=" + scale
+				+ " ERROR_TILES=" + delta;
 			log.debug("MHUD {}", clickDiag);
 		}
 		catch (Exception ex)
@@ -764,15 +857,6 @@ public class MysticHudPlugin extends Plugin
 			inner.setNoClickThrough(true);
 		}
 
-		// the map moved: drop the widget sprite cache so contentType 1338 recomputes its
-		// draw AND its click-to-world mapping against where the widget actually is now,
-		// instead of leaving walk-clicks resolving against the last cached position
-		if (dx != lastMapDx || targetY != lastMapY)
-		{
-			lastMapDx = dx;
-			lastMapY = targetY;
-			client.getWidgetSpriteCache().reset();
-		}
 		Widget host = top(ORB_HOST);
 		if (host != null)
 		{

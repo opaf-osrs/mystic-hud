@@ -213,6 +213,33 @@ public class MysticHudFrameOverlay extends Overlay
 				ly += 10;
 			}
 
+			// THE MEASUREMENT. the player is ALWAYS at the centre of the real minimap, so
+			// asking RuneLite where the player's own dot renders says where the engine's
+			// minimap actually is, with no click, no yaw and no zoom in the way. the
+			// difference against the centre of the rect we paint IS the constant offset,
+			// read straight off rather than inferred from where a walk ended up. a
+			// magenta cross marks the engine's centre so it can be seen against the frame.
+			net.runelite.api.Player me = client.getLocalPlayer();
+			if (me != null && me.getLocalLocation() != null)
+			{
+				net.runelite.api.Point pm =
+					net.runelite.api.Perspective.localToMinimap(client, me.getLocalLocation(), 10000);
+				if (pm != null)
+				{
+					int ourCx = mb.x + mb.width / 2;
+					int ourCy = mb.y + mb.height / 2;
+					String probe = "engineCentre=(" + pm.getX() + "," + pm.getY() + ")"
+						+ " ourCentre=(" + ourCx + "," + ourCy + ")"
+						+ " DELTA=(" + (pm.getX() - ourCx) + "," + (pm.getY() - ourCy) + ")";
+					g.setColor(Color.BLACK);
+					g.drawString(probe, mb.x + 1, mb.y + mb.height + rowH + 36);
+					g.setColor(Color.MAGENTA);
+					g.drawString(probe, mb.x, mb.y + mb.height + rowH + 35);
+					g.drawLine(pm.getX() - 6, pm.getY(), pm.getX() + 6, pm.getY());
+					g.drawLine(pm.getX(), pm.getY() - 6, pm.getX(), pm.getY() + 6);
+				}
+			}
+
 			// TEMPORARY click diagnostic: click a spot on the map with debug on, wait a
 			// tick, read what canvas position and world destination the engine actually
 			// used. printed below the map rather than over it so it is not covered.
