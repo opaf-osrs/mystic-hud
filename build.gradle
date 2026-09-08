@@ -1,8 +1,5 @@
 plugins {
 	id 'java'
-	// only here to produce the standalone jar handed to the client. the plugin itself
-	// keeps every runtime dependency out, same as a hub plugin would.
-	id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 repositories {
@@ -16,18 +13,9 @@ repositories {
 	mavenCentral()
 }
 
-def runeLiteVersion = project.findProperty('rlVersion') ?: 'latest.release'
-def pluginMainClass = 'com.pluginideahub.mystichud.MysticHudTestClient'
-
-// the client at RUNTIME scope, for the standalone jar only. building that jar off the
-// test classpath instead was dragging junit and hamcrest into what gets handed over.
-configurations {
-	clientRuntime
-}
+def runeLiteVersion = 'latest.release'
 
 dependencies {
-	clientRuntime group: 'net.runelite', name: 'client', version: runeLiteVersion
-
 	compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
 
 	compileOnly 'org.projectlombok:lombok:1.18.30'
@@ -48,64 +36,6 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.register('run', JavaExec) {
 	classpath = sourceSets.test.runtimeClasspath
-	mainClass = project.findProperty('mainClass') ?: pluginMainClass
+	mainClass = 'com.pluginideahub.mystichud.MysticHudTestClient'
 	enableAssertions = true
-}
-
-// one runnable jar with the client and the plugin inside, so it goes to whoever is
-// using it as a single file they start with `java -jar`. no repo, no gradle, no JDK
-// on their side: a plain Java runtime is enough to run it.
-// the plugin and the entry point that loads it, and nothing else: about 40kb. it runs
-// against the client jars RuneLite has already downloaded into .runelite\repository2,
-// so there is no reason to hand someone a second copy of a client they have.
-tasks.register('thinJar', Jar) {
-	archiveBaseName = 'mystic-hud'
-	archiveClassifier = ''
-	archiveVersion = ''
-	from sourceSets.main.output
-	from(sourceSets.test.output) {
-		exclude '**/*Test.class'   // the entry point, not the unit tests
-	}
-	manifest {
-		attributes 'Main-Class': pluginMainClass
-	}
-}
-
-// the everything-inside build, for a machine with no RuneLite on it at all. ~30mb,
-// which is why it is not what gets sent.
-shadowJar {
-	archiveBaseName = 'mystic-hud-standalone'
-	archiveClassifier = ''
-	archiveVersion = ''
-	// the client is compileOnly for the plugin itself, so take the runtime side from
-	// the dedicated configuration rather than the test one, which also carries the
-	// test framework
-	configurations = [project.configurations.clientRuntime]
-	from sourceSets.test.output
-	manifest {
-		attributes 'Main-Class': pluginMainClass
-	}
-	// the client's dependencies are signed; keeping their signatures in a repacked jar
-	// makes the JVM refuse to load them
-	exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/INDEX.LIST'
-	exclude 'module-info.class', 'META-INF/versions/*/module-info.class'
-	mergeServiceFiles()
-}
-
-// build/dist is the folder to hand over as-is: the jar, the thing you double click,
-// and the java finder it leans on. assembling it here means there is no list of
-// files to remember and no chance of sending two of the three.
-tasks.register('dist', Copy) {
-	group = 'distribution'
-	description = 'Assembles the folder to send: jar, launcher and java finder'
-	dependsOn tasks.thinJar
-	into layout.buildDirectory.dir('dist')
-	from tasks.thinJar
-	from(projectDir) {
-		include 'Mystic HUD.bat'
-		include 'find-jdk.ps1'
-	}
-	doLast {
-		println "ready to send: ${layout.buildDirectory.dir('dist').get()}"
-	}
 }

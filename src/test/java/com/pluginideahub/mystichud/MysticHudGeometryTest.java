@@ -135,4 +135,113 @@ public class MysticHudGeometryTest
 			}
 		}
 	}
+
+	/**
+	 * The walk-click offset lived here and went unfound across three sessions. The map
+	 * has THREE mask sprites: 1178 draws it, 2154 and 3513 are the click masks the layout
+	 * script swaps in. Override only the draw mask and the map paints at your width while
+	 * clicks keep resolving against the stock 152 shape, which reads on screen as the
+	 * destination flag landing to one side of the cursor. Nothing about that is visible in
+	 * the drawing, so it has to be pinned here.
+	 */
+	@Test
+	public void everyMapMaskIsOverridden()
+	{
+		assertTrue("the draw mask alone is not enough, the click masks decide where a "
+				+ "walk-click resolves", MysticHudPlugin.MAP_MASK_SPRITES.length >= 3);
+
+		for (int required : new int[]{
+			MysticHudPlugin.MASK_SPRITE,
+			MysticHudPlugin.CLICK_MASK_SPRITE,
+			MysticHudPlugin.BOND_CLICK_MASK_SPRITE})
+		{
+			boolean found = false;
+			for (int s : MysticHudPlugin.MAP_MASK_SPRITES)
+			{
+				found |= s == required;
+			}
+			assertTrue("mask sprite " + required + " is not in MAP_MASK_SPRITES, so it "
+				+ "keeps its stock shape and clicks fall out of step with the draw", found);
+		}
+	}
+
+	/**
+	 * The world map orb is PAINTED, not placed: group 160 has a fixed clip, so with the
+	 * xp orb widening the block the stock widget was clipped or dragged into the middle
+	 * of the map whatever its position was set to. Painting it means the rect depends on
+	 * the map alone, so nothing about the block's width can move it.
+	 */
+	@Test
+	public void worldMapOrbSitsInTheMapsBottomRightCorner()
+	{
+		Rectangle map = new Rectangle(560, 0, 204, 152);
+		Rectangle orb = MysticHudPlugin.worldMapBounds(map);
+
+		assertTrue("orb escapes the map", map.contains(orb));
+		assertEquals(MysticHudPlugin.WORLD_ORB_SIZE, orb.width);
+		assertEquals(MysticHudPlugin.WORLD_ORB_SIZE, orb.height);
+		assertEquals("inset from the map's right edge",
+			MysticHudPlugin.ORB_INSET_X, map.x + map.width - (orb.x + orb.width));
+		assertEquals("inset from the map's bottom edge",
+			MysticHudPlugin.ORB_INSET, map.y + map.height - (orb.y + orb.height));
+	}
+
+	@Test
+	public void worldMapOrbFollowsOnlyTheMapRect()
+	{
+		// the same map rect must give the same orb rect however wide the block around it
+		// is, which is the whole point of painting it rather than placing the widget
+		Rectangle map = new Rectangle(561, 0, 204, 152);
+		assertEquals(MysticHudPlugin.worldMapBounds(map),
+			MysticHudPlugin.worldMapBounds(new Rectangle(561, 0, 204, 152)));
+
+		// and it must track the map when the map itself moves
+		Rectangle moved = MysticHudPlugin.worldMapBounds(new Rectangle(661, 0, 204, 152));
+		assertEquals(MysticHudPlugin.worldMapBounds(map).x + 100, moved.x);
+	}
+
+	/**
+	 * Only two children move between the resizable layouts. Everything inside the minimap
+	 * block keeps its id, which is why classic gets the full feature set rather than a
+	 * restyle. Values decoded from the gameval constants, not guessed: MAP_CONTAINER is
+	 * 164:92 / 161:95 and SIDE_CONTAINER is 164:96 / 161:73.
+	 */
+	@Test
+	public void theTwoLayoutsDifferByExactlyTwoChildIds()
+	{
+		int modern = MysticHudPlugin.TOPLEVEL_MODERN;
+		int classic = MysticHudPlugin.TOPLEVEL_CLASSIC;
+
+		assertEquals("resizable modern is the bottom-line toplevel", 164, modern);
+		assertEquals("resizable classic is the old-school-box toplevel", 161, classic);
+
+		assertEquals(92, MysticHudPlugin.minimapBlockChild(modern));
+		assertEquals(95, MysticHudPlugin.minimapBlockChild(classic));
+		assertEquals(96, MysticHudPlugin.invPanelChild(modern));
+		assertEquals(73, MysticHudPlugin.invPanelChild(classic));
+	}
+
+	@Test
+	public void bothResizableLayoutsAreAcceptedAndFixedIsNot()
+	{
+		assertTrue(MysticHudPlugin.isResizableToplevel(MysticHudPlugin.TOPLEVEL_MODERN));
+		assertTrue(MysticHudPlugin.isResizableToplevel(MysticHudPlugin.TOPLEVEL_CLASSIC));
+		// 548 is the fixed viewport: the plugin must stay inert there
+		assertTrue("fixed layout must not be laid out in",
+			!MysticHudPlugin.isResizableToplevel(548));
+	}
+
+	@Test
+	public void maskSpritesAreDistinct()
+	{
+		// a duplicate would silently leave one of the three on its stock mask
+		for (int i = 0; i < MysticHudPlugin.MAP_MASK_SPRITES.length; i++)
+		{
+			for (int j = i + 1; j < MysticHudPlugin.MAP_MASK_SPRITES.length; j++)
+			{
+				assertTrue("duplicate mask sprite " + MysticHudPlugin.MAP_MASK_SPRITES[i],
+					MysticHudPlugin.MAP_MASK_SPRITES[i] != MysticHudPlugin.MAP_MASK_SPRITES[j]);
+			}
+		}
+	}
 }

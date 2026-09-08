@@ -69,6 +69,17 @@ public interface MysticHudConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "originalFrameArt",
+		name = "Original frame art",
+		description = "Draw the frame with the game's own steel border. Turn this off to use the border from your resource pack instead. Only the frame is affected; the compass and the orb icons follow your pack either way.",
+		position = 9
+	)
+	default boolean originalFrameArt()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "mapOutline",
 		name = "Map outline",
 		description = "Draw a UI frame around the rectangular minimap",
@@ -253,7 +264,7 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "orbDebug",
 		name = "Debug readout",
-		description = "Paint the real numbers the layout is working from over the minimap, for when a setting does not appear to do anything",
+		description = "Paint the build tag and the numbers the layout is working from over the minimap. Developer mode only, it does nothing in a normal client.",
 		section = ORB_LAYOUT,
 		position = 14
 	)
@@ -322,7 +333,7 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "attachInventory",
 		name = "Attach to inventory",
-		description = "Glue the block flush onto the inventory panel so they read as one piece; snaps to the top right corner while the inventory is closed. Disables alt-drag.",
+		description = "Glue the block flush onto the inventory panel so they read as one piece; snaps to the top right corner while the inventory is closed. Disables shift-drag. Resizable modern only, it is ignored in classic.",
 		position = 8
 	)
 	default boolean attachInventory()

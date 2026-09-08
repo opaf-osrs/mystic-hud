@@ -59,11 +59,11 @@ public class MysticHudFrameOverlay extends Overlay
 	private static final int COMPASS_SIZE = MysticHudPlugin.COMPASS_SIZE;
 	private static final int COMPASS_SPRITE = 169; // 51x51 compass rose, verified in cache
 
-	// no border art is bundled. the frame is drawn from the steel border sprites (310-315)
+	// no border art is bundled. the frame is drawn from the V2StoneBorders SIDE_PANEL set
 	// read through loadSprite, which checks the client's sprite override table before the
 	// cache: whatever pack the player is running supplies its own art there, so with
 	// Mystic active the frame IS Mystic's and matches the inventory panel exactly, and
-	// with no pack it falls back to the game's own steel. that is a read of live client
+	// with no pack it falls back to the game own stone panel border. a read of live client
 	// state rather than a dependency on another plugin, and nothing third-party ships
 	// inside this repo.
 
@@ -98,10 +98,12 @@ public class MysticHudFrameOverlay extends Overlay
 		int rowY = mb.y + mb.height + MysticHudPlugin.ROW_GAP;
 		int rowH = plugin.rowH();
 
-		Widget inv = client.getWidget(MysticHudPlugin.TOPLEVEL << 16 | MysticHudPlugin.INV_PANEL);
-		boolean bridged = config.attachInventory()
+		// through the plugin, not a raw getWidget: the inventory panel is a different child
+		// in classic (73) than in modern (96), and the group id resolves in one place only
+		Widget inv = plugin.invPanel();
+		boolean bridged = plugin.attachInventory()
 			&& inv != null && !inv.isHidden() && inv.getHeight() > 0;
-		BufferedImage bar = trimmed(sprite(STEEL_H));
+		BufferedImage bar = trimmed(frameSprite(FRAME_TOP));
 
 		// free mode closes the frame on the row's bottom edge, and the band is drawn
 		// INSIDE the rect, so it covers the last few pixels of every block. attached mode
@@ -161,13 +163,19 @@ public class MysticHudFrameOverlay extends Overlay
 			borderFrame(g, mb.x, mb.y, mb.width, mb.height + rowH + 6, false);
 		}
 
+		// the game's own world map orb sprites, painted where the stock widget cannot go
+		if (config.showWorldMap())
+		{
+			worldMapOrb(g, MysticHudPlugin.worldMapBounds(plugin.mapRect()));
+		}
+
 		if (config.showCompass())
 		{
 			Rectangle cb = MysticHudPlugin.compassBounds(plugin.mapRect());
 			compass(g, cb.x, cb.y);
 		}
 
-		if (config.orbDebug())
+		if (plugin.debugReadout())
 		{
 			// build marker: tiny tag at the map's bottom-left. if the tag on screen does
 			// not match the latest build number, the client is running stale code and
@@ -200,44 +208,6 @@ public class MysticHudFrameOverlay extends Overlay
 				ly += 10;
 			}
 
-			// THE MEASUREMENT. the player is ALWAYS at the centre of the real minimap, so
-			// asking RuneLite where the player's own dot renders says where the engine's
-			// minimap actually is, with no click, no yaw and no zoom in the way. the
-			// difference against the centre of the rect we paint IS the constant offset,
-			// read straight off rather than inferred from where a walk ended up. a
-			// magenta cross marks the engine's centre so it can be seen against the frame.
-			net.runelite.api.Player me = client.getLocalPlayer();
-			if (me != null && me.getLocalLocation() != null)
-			{
-				net.runelite.api.Point pm =
-					net.runelite.api.Perspective.localToMinimap(client, me.getLocalLocation(), 10000);
-				if (pm != null)
-				{
-					int ourCx = mb.x + mb.width / 2;
-					int ourCy = mb.y + mb.height / 2;
-					String probe = "engineCentre=(" + pm.getX() + "," + pm.getY() + ")"
-						+ " ourCentre=(" + ourCx + "," + ourCy + ")"
-						+ " DELTA=(" + (pm.getX() - ourCx) + "," + (pm.getY() - ourCy) + ")";
-					g.setColor(Color.BLACK);
-					g.drawString(probe, mb.x + 1, mb.y + mb.height + rowH + 36);
-					g.setColor(Color.MAGENTA);
-					g.drawString(probe, mb.x, mb.y + mb.height + rowH + 35);
-					g.drawLine(pm.getX() - 6, pm.getY(), pm.getX() + 6, pm.getY());
-					g.drawLine(pm.getX(), pm.getY() - 6, pm.getX(), pm.getY() + 6);
-				}
-			}
-
-			// TEMPORARY click diagnostic: click a spot on the map with debug on, wait a
-			// tick, read what canvas position and world destination the engine actually
-			// used. printed below the map rather than over it so it is not covered.
-			String diag = plugin.clickDiag();
-			if (!diag.isEmpty())
-			{
-				g.setColor(Color.BLACK);
-				g.drawString(diag, mb.x + 1, mb.y + mb.height + rowH + 24);
-				g.setColor(Color.GREEN);
-				g.drawString(diag, mb.x, mb.y + mb.height + rowH + 23);
-			}
 		}
 		return null;
 	}
@@ -343,7 +313,7 @@ public class MysticHudFrameOverlay extends Overlay
 				iw = Math.max(1, (int) Math.round(nw * s));
 				ih = Math.max(1, (int) Math.round(nh * s));
 			}
-			if (config.orbDebug())
+			if (plugin.debugReadout())
 			{
 				debugGeom = "slot" + w + " row" + h + " cov" + cover + " vh" + vh;
 				debugIcon = "set" + size + " nat" + nw + "x" + nh + ">" + iw + "x" + ih;
@@ -427,59 +397,145 @@ public class MysticHudFrameOverlay extends Overlay
 	 * outside band missed the panel's band by 4px on the left and fell off the canvas
 	 * entirely on the right.
 	 */
-	// the iron-rivet steel border, the frame the inventory ACTUALLY wears (the "little
-	// silver bits" are its corner knots). loaded override-aware, so whatever the client
-	// shows on the inventory is what we draw.
-	private static final int STEEL_TL = 310;
-	private static final int STEEL_TR = 311;
-	private static final int STEEL_BL = 312;
-	private static final int STEEL_BR = 313;
-	private static final int STEEL_H = 314;
-	private static final int STEEL_V = 315;
+	// V2StoneBorders SIDE_PANEL_*: the border the game puts round its own side panel, which
+	// is the frame the settings and inventory interfaces wear. a proper set, unlike the
+	// steel border used before: four SEPARATE edges so nothing has to be rotated to fake a
+	// side, a consistent 7px band on all four, and purpose-built 32x32 corners.
+	// loaded override-aware, so a resource pack's version of these is what gets drawn.
+	private static final int FRAME_TL = SpriteID.V2StoneBorders.SIDE_PANEL_CORNER_TOP_LEFT;
+	private static final int FRAME_TR = SpriteID.V2StoneBorders.SIDE_PANEL_CORNER_TOP_RIGHT;
+	private static final int FRAME_BL = SpriteID.V2StoneBorders.SIDE_PANEL_CORNER_BOTTOM_LEFT;
+	private static final int FRAME_BR = SpriteID.V2StoneBorders.SIDE_PANEL_CORNER_BOTTOM_RIGHT;
+	private static final int FRAME_TOP = SpriteID.V2StoneBorders.SIDE_PANEL_EDGE_TOP;
+	private static final int FRAME_BOTTOM = SpriteID.V2StoneBorders.SIDE_PANEL_EDGE_BOTTOM;
+	private static final int FRAME_LEFT = SpriteID.V2StoneBorders.SIDE_PANEL_EDGE_LEFT;
+	private static final int FRAME_RIGHT = SpriteID.V2StoneBorders.SIDE_PANEL_EDGE_RIGHT;
 
 	/**
-	 * Style B, the user's circled look: Mystic's thin dark window-edge language for the
-	 * runs, with the steel corner knots as the silver accents. Knots come from the cache
-	 * (pack overrides make them invisible); the thin edges are Mystic's palette.
+	 * The panel frame: a band drawn INSIDE the rectangle's edge with the steel corner knots
+	 * on top. Written to survive art of ANY size, because the two sources are nothing alike:
+	 * the Mystic pack's corners are about 8x8 with a ~4px edge tile, while the game's own
+	 * are 25x30 with a 36x6 top edge and a 6x36 side edge. Drawing the vanilla art through
+	 * the pack's assumptions is what produced the oversized white boxes: 25x30 corners
+	 * dropped raw onto a 6px band leave 24px of each corner hanging over the map.
+	 *
+	 * So nothing here is a constant. Corner art is trimmed and, when it is large next to the
+	 * band, scaled down to it; the runs stop short of the corners instead of passing under
+	 * them; and the verticals come from the real side sprite rather than a rotated top.
 	 */
 	private void borderFrame(Graphics2D g, int x, int y, int w, int h, boolean openBottom)
 	{
-		// all four edges from the pack's horizontal bar (the one steel piece Mystic
-		// keeps visible), rotated for the verticals: full 6px thickness matching the
-		// corner knots' arms, one art family throughout
-		BufferedImage eh = trimmed(sprite(STEEL_H));
+		BufferedImage eh = frameArt(FRAME_TOP);
 		if (eh == null)
 		{
 			return;
 		}
-		BufferedImage ev = rotated(eh);
-		int t = eh.getHeight(); // true bar thickness after trimming
-		tileH(g, eh, x, x + w, y);
-		int sideEnd = y + h - (openBottom ? 0 : t);
-		tileV(g, ev, x, y + t, sideEnd);
-		tileV(g, ev, x + w - ev.getWidth(), y + t, sideEnd);
+		// the real bottom edge, not the top drawn twice; falls back to the top if absent
+		BufferedImage ehBottom = orElse(frameArt(FRAME_BOTTOM), eh);
+		// the REAL side piece (315), not the top rotated 90 degrees. rotating the top was
+		// invisible on the pack's near-uniform bar but wrong on any art with a directional
+		// bevel: it lights the wrong way, and the same rotated image was used for both
+		// sides with no mirror, so one of the two always read inverted. rotation stays as
+		// the fallback for art that has no separate side piece.
+		BufferedImage ev = orElse(frameArt(FRAME_LEFT), rotated(eh));
+		// and the real right edge: this set has one, so neither side is a mirrored guess
+		BufferedImage evRight = orElse(frameArt(FRAME_RIGHT), ev);
+
+		int tTop = eh.getHeight();   // band thickness across the top and bottom
+		int tSide = ev.getWidth();   // and down the sides; not necessarily the same
+
+		// corners first, so their real footprint decides where the runs stop
+		BufferedImage tl = frameCorner(FRAME_TL, w, h);
+		BufferedImage tr = frameCorner(FRAME_TR, w, h);
+		BufferedImage bl = openBottom ? null : frameCorner(FRAME_BL, w, h);
+		BufferedImage br = openBottom ? null : frameCorner(FRAME_BR, w, h);
+
+		int tlW = tl == null ? 0 : tl.getWidth(), tlH = tl == null ? 0 : tl.getHeight();
+		int trW = tr == null ? 0 : tr.getWidth(), trH = tr == null ? 0 : tr.getHeight();
+		int blW = bl == null ? 0 : bl.getWidth(), blH = bl == null ? 0 : bl.getHeight();
+		int brW = br == null ? 0 : br.getWidth(), brH = br == null ? 0 : br.getHeight();
+
+		// runs are inset by the corners they meet, so the two never overlap
+		tileH(g, eh, x + tlW, x + w - trW, y);
 		if (!openBottom)
 		{
-			tileH(g, eh, x, x + w, y + h - t);
+			tileH(g, ehBottom, x + blW, x + w - brW, y + h - ehBottom.getHeight());
 		}
+		int leftTop = y + tlH;
+		int rightTop = y + trH;
+		int leftEnd = y + h - (openBottom ? 0 : blH);
+		int rightEnd = y + h - (openBottom ? 0 : brH);
+		tileV(g, ev, x, leftTop, leftEnd);
+		tileV(g, evRight, x + w - evRight.getWidth(), rightTop, rightEnd);
 
-		// corners OVERRIDE-AWARE: the pack restyles these to its own palette, and that
-		// restyled version is exactly what the inventory's corners show
-		BufferedImage tl = sprite(STEEL_TL), tr = sprite(STEEL_TR);
-		if (tl != null && tr != null)
+		if (tl != null)
 		{
 			g.drawImage(tl, x, y, null);
-			g.drawImage(tr, x + w - tr.getWidth(), y, null);
 		}
-		if (!openBottom)
+		if (tr != null)
 		{
-			BufferedImage bl = sprite(STEEL_BL), br = sprite(STEEL_BR);
-			if (bl != null && br != null)
-			{
-				g.drawImage(bl, x, y + h - bl.getHeight(), null);
-				g.drawImage(br, x + w - br.getWidth(), y + h - br.getHeight(), null);
-			}
+			g.drawImage(tr, x + w - trW, y, null);
 		}
+		if (bl != null)
+		{
+			g.drawImage(bl, x, y + h - blH, null);
+		}
+		if (br != null)
+		{
+			g.drawImage(br, x + w - brW, y + h - brH, null);
+		}
+	}
+
+	/**
+	 * A trimmed frame piece, falling back to the game's own art when the pack's version of
+	 * that piece is BLANK. Packs routinely override a sprite with an empty canvas to hide
+	 * it, and trimming that yields nothing, which silently deleted the piece: the corners
+	 * vanished off the frame while the edges stayed. A missing piece of frame should come
+	 * from the cache rather than not be drawn.
+	 */
+	private BufferedImage frameArt(int id)
+	{
+		BufferedImage art = trimmed(frameSprite(id));
+		return art != null ? art : trimmed(cacheSprite(id));
+	}
+
+	private static BufferedImage orElse(BufferedImage a, BufferedImage b)
+	{
+		return a != null ? a : b;
+	}
+
+	// a corner is left alone until it is this much bigger than the band it sits in; past
+	// that it is scaled to the band, or it hangs over the map instead of framing it
+	// a corner may take up to this much of the frame's shorter side before it is scaled.
+	// measured against the FRAME, not the band: a proper corner piece is an L whose arms
+	// are the band's thickness and whose legs run a long way along each edge, so it is
+	// legitimately many times the band and must not be judged against it.
+	private static final double CORNER_MAX_SHARE = 0.45;
+
+	/**
+	 * A corner knot, trimmed of padding, at its natural size unless it is big enough to
+	 * swallow the frame. The stone set's corners are 32x32 L pieces with 7px arms sitting
+	 * on a 7px band: exactly right at full size, and unrecognisable if shrunk. Scaling only
+	 * catches art that would genuinely overrun the panel, and is nearest-neighbour so a
+	 * shrunken knot stays hard edged rather than smeared.
+	 */
+	private BufferedImage frameCorner(int spriteId, int frameW, int frameH)
+	{
+		BufferedImage raw = frameArt(spriteId);
+		if (raw == null)
+		{
+			return null;
+		}
+		int limit = (int) (Math.min(frameW, frameH) * CORNER_MAX_SHARE);
+		int longest = Math.max(raw.getWidth(), raw.getHeight());
+		if (limit <= 0 || longest <= limit)
+		{
+			return raw;
+		}
+		double scale = limit / (double) longest;
+		int cw = Math.max(1, (int) Math.round(raw.getWidth() * scale));
+		int ch = Math.max(1, (int) Math.round(raw.getHeight() * scale));
+		return scaledCorner(spriteId, raw, cw, ch);
 	}
 
 	private void tileH(Graphics2D g, BufferedImage tile, int x0, int x1, int y)
@@ -545,6 +601,32 @@ public class MysticHudFrameOverlay extends Overlay
 			g.drawLine((int) cx, (int) cy, (int) (2 * cx) - nx, (int) (2 * cy) - ny);
 		}
 		g.setClip(oldClip);
+	}
+
+	/** The stock world map orb, ring and planet, with the game's own hover swap. */
+	private void worldMapOrb(Graphics2D g, Rectangle bounds)
+	{
+		net.runelite.api.Point mouse = client.getMouseCanvasPosition();
+		boolean hovered = mouse != null && bounds.contains(mouse.getX(), mouse.getY());
+		BufferedImage ring = sprite(SpriteID.RING_30);
+		BufferedImage planet = sprite(hovered
+			? SpriteID.WorldmapIcon.PLANET_HOVERED
+			: SpriteID.WorldmapIcon.PLANET);
+		if (ring != null)
+		{
+			drawCentered(g, ring, bounds);
+		}
+		if (planet != null)
+		{
+			drawCentered(g, planet, bounds);
+		}
+	}
+
+	private static void drawCentered(Graphics2D g, BufferedImage image, Rectangle bounds)
+	{
+		int x = bounds.x + (bounds.width - image.getWidth()) / 2;
+		int y = bounds.y + (bounds.height - image.getHeight()) / 2;
+		g.drawImage(image, x, y, null);
 	}
 
 	// ---- data ----
@@ -676,6 +758,33 @@ public class MysticHudFrameOverlay extends Overlay
 		return icons.computeIfAbsent(iconSprite(orbChild), this::loadSprite);
 	}
 
+	/**
+	 * A FRAME sprite. The border is the one piece with a style choice: normally it comes
+	 * from the sprite override table, so it matches whatever pack the player runs, but
+	 * Original frame art reads the game's own steel straight from the cache instead.
+	 * Kept separate from sprite() so the compass and orb icons still follow the pack.
+	 */
+	/**
+	 * Drop every piece of derived art. The memo maps keyed by sprite id are the problem:
+	 * they hold the FIRST image seen for an id forever, so enabling, disabling or swapping a
+	 * resource pack left the frame, compass and orb icons on the old pack's art until the
+	 * plugin was restarted. Cheap and rare, so it is called on any config change at all
+	 * rather than trying to guess which ones move sprites.
+	 */
+	void clearArtCaches()
+	{
+		icons.clear();
+		cacheOnly.clear();
+		trims.clear();
+		rotations.clear();
+		scaledCorners.clear();
+	}
+
+	private BufferedImage frameSprite(int id)
+	{
+		return config.originalFrameArt() ? cacheSprite(id) : sprite(id);
+	}
+
 	private BufferedImage sprite(int id)
 	{
 		return icons.computeIfAbsent(id, this::loadSprite);
@@ -697,8 +806,12 @@ public class MysticHudFrameOverlay extends Overlay
 		return cacheOnly.computeIfAbsent(id, i -> spriteManager.getSprite(i, 0));
 	}
 
-	private BufferedImage trimSrc;
-	private BufferedImage trimCached;
+	// trims keyed by the image ITSELF. this used to be a single slot compared by identity,
+	// which was fine while only the one edge bar was trimmed per frame; the frame now trims
+	// an edge, a side and four corners, and a one slot cache would miss on every call and
+	// pay a whole-image getRGB scan each time, on the render path. nulls are stored too, so
+	// a missing sprite is not rescanned every frame forever.
+	private final Map<BufferedImage, BufferedImage> trims = new java.util.IdentityHashMap<>();
 
 	/**
 	 * Cropped to its opaque pixels: pack override art often floats the visible bar
@@ -710,9 +823,9 @@ public class MysticHudFrameOverlay extends Overlay
 		{
 			return null;
 		}
-		if (trimCached != null && trimSrc == src)
+		if (trims.containsKey(src))
 		{
-			return trimCached;
+			return trims.get(src);
 		}
 		int minX = src.getWidth(), minY = src.getHeight(), maxX = -1, maxY = -1;
 		for (int yy = 0; yy < src.getHeight(); yy++)
@@ -728,32 +841,48 @@ public class MysticHudFrameOverlay extends Overlay
 				}
 			}
 		}
-		if (maxX < 0)
-		{
-			return null; // fully transparent override; nothing usable
-		}
-		trimSrc = src;
-		trimCached = src.getSubimage(minX, minY, maxX - minX + 1, maxY - minY + 1);
-		return trimCached;
+		BufferedImage out = maxX < 0 ? null
+			: src.getSubimage(minX, minY, maxX - minX + 1, maxY - minY + 1);
+		trims.put(src, out);
+		return out;
 	}
 
-	private BufferedImage rotSrc;
-	private BufferedImage rotCached;
+	// scaled corner knots, keyed by sprite and target size
+	private final Map<String, BufferedImage> scaledCorners = new HashMap<>();
 
-	/** The horizontal edge bar turned 90 degrees for the vertical runs. */
+	/** Nearest-neighbour so a shrunken knot stays hard edged rather than smeared. */
+	private BufferedImage scaledCorner(int spriteId, BufferedImage raw, int w, int h)
+	{
+		return scaledCorners.computeIfAbsent(spriteId + "x" + w + "x" + h, k ->
+		{
+			BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+			Graphics2D cg = out.createGraphics();
+			cg.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+				java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+			cg.drawImage(raw, 0, 0, w, h, null);
+			cg.dispose();
+			return out;
+		});
+	}
+
+	private final Map<BufferedImage, BufferedImage> rotations =
+		new java.util.IdentityHashMap<>();
+
+	/**
+	 * The horizontal edge bar turned 90 degrees. Used for the inter-block dividers, and as
+	 * the fallback for the frame's sides when the art has no separate side piece.
+	 */
 	private BufferedImage rotated(BufferedImage src)
 	{
-		if (rotCached == null || rotSrc != src)
+		return rotations.computeIfAbsent(src, k ->
 		{
-			BufferedImage out = new BufferedImage(src.getHeight(), src.getWidth(),
+			BufferedImage out = new BufferedImage(k.getHeight(), k.getWidth(),
 				BufferedImage.TYPE_INT_ARGB);
 			Graphics2D rg = out.createGraphics();
 			rg.rotate(Math.PI / 2, 0, 0);
-			rg.drawImage(src, 0, -src.getHeight(), null);
+			rg.drawImage(k, 0, -k.getHeight(), null);
 			rg.dispose();
-			rotSrc = src;
-			rotCached = out;
-		}
-		return rotCached;
+			return out;
+		});
 	}
 }

@@ -3,7 +3,6 @@ package com.pluginideahub.mystichud;
 import com.google.inject.Provides;
 import java.awt.Rectangle;
 import java.awt.event.MouseEvent;
-import java.awt.event.MouseWheelEvent;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -12,33 +11,32 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.Player;
-import net.runelite.api.coords.LocalPoint;
-import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.MenuAction;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.GameTick;
 import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetPositionMode;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseManager;
-import net.runelite.client.input.MouseWheelListener;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 /**
  * Rebuilds the minimap/orb area as a rectangular block sitting directly above the
- * inventory in resizable modern mode.
+ * inventory, in either resizable layout.
  *
- * All widget ids below were read from the interface cache export:
- * group 164 is the resizable-modern toplevel, group 160 is the orbs interface.
+ * All widget ids below were read from the interface cache export. Group 160 is the orbs
+ * interface and is the same whichever layout is up; the toplevel is 164 in resizable
+ * modern and 161 in resizable classic, and only two of its children move between them.
  * The circular minimap shape is nothing but mask sprite 1178 sitting on the
  * contentType-1338 map widget, so clearing that sprite id yields a square map.
  */
@@ -50,15 +48,44 @@ import net.runelite.client.ui.overlay.OverlayManager;
 )
 public class MysticHudPlugin extends Plugin
 {
-	// toplevel, resizable modern (group 164)
-	static final int TOPLEVEL = 164;
-	static final int MINIMAP_BLOCK = 92;   // 211x207 container holding minimap + orbs
+	// The two resizable toplevels. The gameval names are inverted from intuition, so the
+	// WidgetID names are given here as the readable ones: TOPLEVEL_PRE_EOC is the resizable
+	// MODERN bottom-line layout, TOPLEVEL_OSRS_STRETCH is resizable CLASSIC's old-school box.
+	// Read a gameval name alone and you will pick the wrong group.
+	static final int TOPLEVEL_MODERN = InterfaceID.TOPLEVEL_PRE_EOC;      // 164
+	static final int TOPLEVEL_CLASSIC = InterfaceID.TOPLEVEL_OSRS_STRETCH; // 161
+
+	// children INSIDE the minimap block are identical in both layouts
 	static final int MINIMAP_INNER = 22;   // inner container the map widgets live in
 	static final int MINIMAP_MAP = 30;     // contentType 1338, the actual map draw target
 	static final int MINIMAP_COMPASS = 29; // contentType 1339, round compass + its mask
 	static final int MINIMAP_RING = 32;    // sprite 1177 circular surround
 	static final int ORB_HOST = 33;        // 207x197 container group 160 loads into
-	static final int INV_PANEL = 96;       // 204x275 inventory panel
+
+	// ...and these two do NOT. verified against the gameval constants rather than guessed:
+	// MAP_CONTAINER is 164:92 / 161:95, SIDE_CONTAINER is 164:96 / 161:73
+	static final int MINIMAP_BLOCK_MODERN = 92;  // 211x207 container holding minimap + orbs
+	static final int MINIMAP_BLOCK_CLASSIC = 95;
+	static final int INV_PANEL_MODERN = 96;      // 204x275 inventory panel
+	static final int INV_PANEL_CLASSIC = 73;
+
+	/** True when the id is one of the two resizable toplevels we can lay out in. */
+	static boolean isResizableToplevel(int toplevel)
+	{
+		return toplevel == TOPLEVEL_MODERN || toplevel == TOPLEVEL_CLASSIC;
+	}
+
+	/** The minimap block's child id for a given toplevel. */
+	static int minimapBlockChild(int toplevel)
+	{
+		return toplevel == TOPLEVEL_CLASSIC ? MINIMAP_BLOCK_CLASSIC : MINIMAP_BLOCK_MODERN;
+	}
+
+	/** The inventory panel's child id for a given toplevel. */
+	static int invPanelChild(int toplevel)
+	{
+		return toplevel == TOPLEVEL_CLASSIC ? INV_PANEL_CLASSIC : INV_PANEL_MODERN;
+	}
 
 	// orbs (group 160): container / capsule-backing child per orb
 	static final int ORBS = 160;
@@ -70,6 +97,9 @@ public class MysticHudPlugin extends Plugin
 	// activity adviser and 160:43 (1609 + 1668) is the store orb; both fall to the sweep
 	static final int XP_ORB = 6;
 	static final int WORLD_MAP_ORB = 49;
+	// the op child the stock orb runs to open the world map. we paint our own orb and
+	// forward the player's click to this, because the widget itself cannot be moved.
+	static final int WORLD_MAP_ACTION = 55;
 	// the glossy sphere art inside each orb (fill sprite + status overlay containers);
 	// 160:16 stays visible, the hp icon turned out to live under it
 	static final int[] SPHERES = {11, 12, 14, 22, 23, 30, 31, 38, 39, 41};
@@ -88,9 +118,6 @@ public class MysticHudPlugin extends Plugin
 	// moved" and never revalidates, leaving icons and numbers unrendered until something
 	// else nudges the layout
 	private int settle;
-	// last logged centre gap, so the probe only speaks when it changes
-	private int lastGap = Integer.MIN_VALUE;
-	private String lastMaskState = "";
 	// current orb row height; compresses when the window is short
 	private int rowH = ROW_H;
 	// current map width; insets when engulfed by the inventory panel
@@ -205,13 +232,16 @@ public class MysticHudPlugin extends Plugin
 	// so the visible gap reads the same on both axes
 	static final int ORB_INSET = 6;  // lower, snug to the bottom divider
 	static final int ORB_INSET_X = 12;
+	// the visible world map orb is 30 inside a 57 wide stock widget, sitting against its
+	// right edge, so the widget's left is ORB_W - WORLD_ORB_SIZE further left again
+	static final int WORLD_ORB_SIZE = 30;
 	// height of the whole side stack in resizable modern: 204x275 panel plus two 36px
 	// tab rows. used as a STABLE anchor so the block does not jump when a tab opens
 	static final int INV_STACK_H = 275 + 2 * 36;
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b68";
+	static final String BUILD_TAG = "b85-hub";
 
 	@Inject
 	private Client client;
@@ -234,6 +264,18 @@ public class MysticHudPlugin extends Plugin
 	@Inject
 	private ConfigManager configManager;
 
+	// the debug readout is a support tool, not a feature: it paints the build tag and the
+	// numbers the layout is working from. gated here so it cannot do anything in a normal
+	// client even with the config switched on.
+	@Inject
+	@javax.inject.Named("developerMode")
+	private boolean developerMode;
+
+	boolean debugReadout()
+	{
+		return developerMode && config.orbDebug();
+	}
+
 	// live drag state; offsets persist through the hidden posX/posY config keys.
 	// written on the AWT thread, read on the client thread
 	private volatile Rectangle mapBounds;
@@ -245,21 +287,6 @@ public class MysticHudPlugin extends Plugin
 	private boolean dragging;
 	private int lastLoggedOffY = Integer.MIN_VALUE;
 	private int grabX, grabY, dragBaseX, dragBaseY;
-
-	// TEMPORARY click diagnostic (debug readout only). take 2: the first attempt read
-	// client state directly on the input thread inside mousePressed and broke walk-clicks
-	// outright, most likely an exception there aborting the AWT dispatch before the
-	// game's own native click handling ran. this version does nothing but arithmetic on
-	// the input thread; every client/widget read is deferred to the client thread via
-	// clientThread.invokeLater, same as the compass click already does for setCameraYawTarget.
-	private volatile int clickCanvasX, clickCanvasY;
-	private volatile java.awt.Point clickInMap;
-	private volatile WorldPoint clickPlayerPos;
-	private volatile int clickYaw;
-	private volatile int clickExpDx, clickExpDy;
-	private volatile String clickScale = "n/a";
-	private volatile int clickPendingTicks = -1;
-	private volatile String clickDiag = "";
 
 	private final MouseAdapter mouse = new MouseAdapter()
 	{
@@ -284,10 +311,20 @@ public class MysticHudPlugin extends Plugin
 					return e;
 				}
 			}
+			// our painted orb has no widget of its own, so the click it would have taken
+			// is forwarded to the stock op. this runs ONLY off a real button press from
+			// the player, the same shape as the compass click above.
+			if (b != null && config.showWorldMap() && e.getButton() == MouseEvent.BUTTON1
+				&& !e.isShiftDown() && hits(worldMapBounds(mapRect()), e))
+			{
+				clientThread.invokeLater(MysticHudPlugin.this::openWorldMap);
+				e.consume();
+				return e;
+			}
 			// shift, not alt: Windows and several window managers swallow alt-drag.
 			// free mode only: attached is glued and ignores position entirely
 			Rectangle zone = blockZone();
-			if (e.isShiftDown() && !config.attachInventory() && zone != null && hits(zone, e))
+			if (e.isShiftDown() && !attachInventory() && zone != null && hits(zone, e))
 			{
 				dragging = true;
 				grabX = e.getX();
@@ -295,19 +332,6 @@ public class MysticHudPlugin extends Plugin
 				dragBaseX = offX;
 				dragBaseY = offY;
 				e.consume();
-			}
-			// TEMPORARY: capture a plain walk-click for the debug readout, without
-			// touching the click itself. no e.consume(), no client/widget reads on this
-			// thread: only int arithmetic, so nothing here can affect whether the native
-			// walk-click still fires right after we return
-			else if (config.orbDebug() && b != null && e.getButton() == MouseEvent.BUTTON1
-				&& !e.isShiftDown() && b.contains(e.getPoint()))
-			{
-				int cx = e.getX();
-				int cy = e.getY();
-				int mx = cx - b.x;
-				int my = cy - b.y;
-				clientThread.invokeLater(() -> captureClickContext(cx, cy, mx, my));
 			}
 			return e;
 		}
@@ -388,6 +412,8 @@ public class MysticHudPlugin extends Plugin
 	// widget -> original geometry so shutDown puts everything back
 	private final Map<Widget, int[]> saved = new HashMap<>();
 	private final Map<Widget, Boolean> savedHidden = new HashMap<>();
+	// x position modes we override, so shutDown hands them back like everything else
+	private final Map<Widget, Integer> savedXPositionModes = new HashMap<>();
 
 	// the game's own minimap zoom, captured so shutDown can hand it back
 
@@ -403,7 +429,7 @@ public class MysticHudPlugin extends Plugin
 	};
 	private final Map<Integer, net.runelite.api.SpritePixels> previousMasks = new HashMap<>();
 	private net.runelite.api.SpritePixels mask;
-	private int maskW, maskH, maskVisH;
+	private int maskW, maskH;
 
 	@Provides
 	MysticHudConfig provideConfig(ConfigManager configManager)
@@ -451,10 +477,10 @@ public class MysticHudPlugin extends Plugin
 		{
 			saved.clear();
 			savedHidden.clear();
-			mapBounds = null;
+			savedXPositionModes.clear();
+				mapBounds = null;
 			previousMasks.clear();
 			mask = null;
-			dumpedGeometry = false;
 		}
 		if (e.getGameState() == GameState.LOGGED_IN)
 		{
@@ -471,265 +497,24 @@ public class MysticHudPlugin extends Plugin
 	{
 		// fires for varps as well as varbits, so this one subscription covers all of it
 		readOrbStates();
-	}
 
-	private void captureClickContext(int canvasX, int canvasY, int mapX, int mapY)
-	{
-		try
+		// switching between resizable classic and modern swaps the whole toplevel under us,
+		// so the widgets we had are gone and the two child ids have moved. force a settle
+		// to rebuild against the new one rather than wait for something else to nudge it.
+		if (e.getVarbitId() == VarbitID.RESIZABLE_STONE_ARRANGEMENT)
 		{
-			Player local = client.getLocalPlayer();
-			if (local == null)
-			{
-				return;
-			}
-			clickCanvasX = canvasX;
-			clickCanvasY = canvasY;
-			clickInMap = new java.awt.Point(mapX, mapY);
-			clickPlayerPos = local.getWorldLocation();
-			clickYaw = client.getCameraYaw();
-
-			// THE SEARCH HAPPENS HERE, AT CLICK TIME. doing it two ticks later when the
-			// destination is readable meant projecting against a camera that had since
-			// rotated and a player who had since walked, which is why a yaw=0 sample could
-			// report a diagonal pxPerTile. the tile under the cursor has to be resolved
-			// against the frame the cursor was actually in.
-			LocalPoint here = local.getLocalLocation();
-			clickExpDx = 0;
-			clickExpDy = 0;
-			clickScale = "n/a";
-			if (here != null)
-			{
-				long bestD2 = Long.MAX_VALUE;
-				for (int tx = -30; tx <= 30; tx++)
-				{
-					for (int ty = -30; ty <= 30; ty++)
-					{
-						LocalPoint lp = new LocalPoint(here.getX() + tx * 128,
-							here.getY() + ty * 128, client.getTopLevelWorldView());
-						net.runelite.api.Point p =
-							net.runelite.api.Perspective.localToMinimap(client, lp, 10000);
-						if (p == null)
-						{
-							continue;
-						}
-						long ddx = p.getX() - canvasX;
-						long ddy = p.getY() - canvasY;
-						long d2 = ddx * ddx + ddy * ddy;
-						if (d2 < bestD2)
-						{
-							bestD2 = d2;
-							clickExpDx = tx;
-							clickExpDy = ty;
-						}
-					}
-				}
-				net.runelite.api.Point p0 =
-					net.runelite.api.Perspective.localToMinimap(client, here, 10000);
-				net.runelite.api.Point p1 = net.runelite.api.Perspective.localToMinimap(client,
-					new LocalPoint(here.getX() + 128, here.getY(),
-						client.getTopLevelWorldView()), 10000);
-				if (p0 != null && p1 != null)
-				{
-					clickScale = "(" + (p1.getX() - p0.getX())
-						+ "," + (p1.getY() - p0.getY()) + ")";
-				}
-			}
-			clickPendingTicks = 2;
+			settle = 60;
 		}
-		catch (Exception ex)
-		{
-			log.debug("MHUD click capture failed", ex);
-		}
-	}
-
-	@Subscribe
-	public void onGameTick(GameTick e)
-	{
-		// THE MEASUREMENT, logged as well as painted: where the engine puts the player's
-		// own dot (always the real minimap's centre) against the centre of the rect we
-		// paint. the difference is the constant offset, read directly.
-		if (config.orbDebug() && !dumpedGeometry && mapBounds != null)
-		{
-			dumpedGeometry = true;
-			dumpGeometry();
-		}
-
-		if (config.orbDebug())
-		{
-			Rectangle mb = mapBounds;
-			Player me = client.getLocalPlayer();
-			if (mb != null && me != null && me.getLocalLocation() != null)
-			{
-				net.runelite.api.Point pm =
-					net.runelite.api.Perspective.localToMinimap(client, me.getLocalLocation(), 10000);
-				if (pm != null)
-				{
-					// the two centres that actually matter: where the ENGINE takes clicks
-					// from (the map container's left edge plus native half-width) against
-					// the centre of the frame the player aims with. their gap IS the walk
-					// offset, in pixels, with no click needed to see it.
-					Widget innerW = top(MINIMAP_INNER);
-					net.runelite.api.Point il = innerW == null ? null : innerW.getCanvasLocation();
-					int engineCx = il == null ? -1 : il.getX() + NATIVE_MAP / 2;
-					int frameCx = mb.x + mb.width / 2;
-					// THE MASK, which is what the notes say the engine sizes the minimap
-					// from. if ours is being replaced by a 152-wide one (the pack, or a
-					// cache reset putting the stock sprite back) the draw stays wide off
-					// the container while the click maths falls back to native, which is a
-					// 26px offset on a full-width map: exactly the symptom.
-					// engineCx below is NOT measured, it is innerCanvasX + native/2, ie an
-					// assumption written out. do not read a gap off it as evidence.
-					Map<Integer, net.runelite.api.SpritePixels> ov = client.getSpriteOverrides();
-					net.runelite.api.SpritePixels cur = ov == null ? null : ov.get(MASK_SPRITE);
-					String maskState = cur == null ? "ABSENT"
-						: (cur == mask ? "ours" : "FOREIGN") + " " + cur.getWidth() + "x"
-							+ cur.getHeight() + " max" + cur.getMaxWidth() + "x"
-							+ cur.getMaxHeight() + " off(" + cur.getOffsetX() + ","
-							+ cur.getOffsetY() + ")";
-					int gap = engineCx < 0 ? 0 : frameCx - engineCx;
-					if (gap != lastGap || !maskState.equals(lastMaskState))
-					{
-						lastGap = gap;
-						lastMaskState = maskState;
-						log.debug("MHUD probe frameCentreX={} assumedCx={} innerCanvasX={} "
-								+ "innerW={} mask=[{}] wantMask={}x{} mb={} trueWidth={}",
-							frameCx, engineCx,
-							il == null ? -1 : il.getX(), innerW == null ? -1 : innerW.getWidth(),
-							maskState, maskW, maskH, mb, config.nativeMapWidth());
-					}
-				}
-			}
-		}
-
-		if (clickPendingTicks < 0)
-		{
-			return;
-		}
-		if (clickPendingTicks-- > 0)
-		{
-			return;
-		}
-		try
-		{
-			// the ONLY thing read at resolve time is the destination, which is the one
-			// value that does not exist yet at click time. everything it is compared
-			// against was captured in the click's own frame.
-			LocalPoint destLocal = client.getLocalDestinationLocation();
-			String actTiles = "n/a";
-			String delta = "n/a";
-			if (destLocal != null && clickPlayerPos != null)
-			{
-				WorldPoint act = WorldPoint.fromLocal(client, destLocal);
-				int adx = act.getX() - clickPlayerPos.getX();
-				int ady = act.getY() - clickPlayerPos.getY();
-				actTiles = "(" + adx + "," + ady + ")";
-				delta = "(" + (adx - clickExpDx) + "," + (ady - clickExpDy) + ")";
-			}
-			clickDiag = "click inMap=" + clickInMap
-				+ " yaw=" + clickYaw
-				+ " expTiles=(" + clickExpDx + "," + clickExpDy + ")"
-				+ " actTiles=" + actTiles
-				+ " pxPerTileE=" + clickScale
-				+ " ERROR_TILES=" + delta;
-			log.debug("MHUD {}", clickDiag);
-		}
-		catch (Exception ex)
-		{
-			log.debug("MHUD click resolve failed", ex);
-		}
-		finally
-		{
-			clickPendingTicks = -1;
-		}
-	}
-
-	String clickDiag()
-	{
-		return clickDiag;
-	}
-
-	// dumped once per login, not every frame
-	private boolean dumpedGeometry;
-
-	/**
-	 * STOCK versus APPLIED, for every widget we touch. The originals are already sitting in
-	 * the save map so shutDown can put them back, and they were never once looked at: if
-	 * the engine takes minimap clicks against where the map STOCK sits rather than where we
-	 * moved it to, the offset is the difference between these two columns and has been
-	 * readable all along. Printed as canvas rects so it can be compared straight against
-	 * the click measurements.
-	 */
-	private void dumpGeometry()
-	{
-		int[] ids = {MINIMAP_BLOCK, MINIMAP_INNER, MINIMAP_MAP, ORB_HOST, INV_PANEL};
-		String[] names = {"block92", "inner22", "map30", "host33", "inv96"};
-		for (int i = 0; i < ids.length; i++)
-		{
-			Widget w = top(ids[i]);
-			if (w == null)
-			{
-				continue;
-			}
-			int[] orig = saved.get(w);
-			net.runelite.api.Point loc = w.getCanvasLocation();
-			// position/size MODES included: map30 landed 53px right of the container we
-			// put it at (0,0) in, so the values we set are being reinterpreted by the
-			// widget's own layout mode rather than taken literally
-			log.debug("MHUD geom {} stockOrig={} appliedOrig=({},{},{}x{}) canvas=({},{},{}x{})"
-					+ " rel=({},{}) modes x={} y={} w={} h={} parent={}",
-				names[i],
-				orig == null ? "unsaved"
-					: "(" + orig[0] + "," + orig[1] + "," + orig[2] + "x" + orig[3] + ")",
-				w.getOriginalX(), w.getOriginalY(), w.getOriginalWidth(), w.getOriginalHeight(),
-				loc == null ? -1 : loc.getX(), loc == null ? -1 : loc.getY(),
-				w.getWidth(), w.getHeight(),
-				w.getRelativeX(), w.getRelativeY(),
-				w.getXPositionMode(), w.getYPositionMode(),
-				w.getWidthMode(), w.getHeightMode(),
-				Integer.toHexString(w.getParentId()));
-		}
-		log.debug("MHUD geom canvas={}x{} mapBounds={} mapDrawRect={}",
-			client.getCanvasWidth(), client.getCanvasHeight(), mapBounds, mapDrawRect);
-	}
-
-	/**
-	 * The engine's OWN answer, taken from the menu entry rather than from where the player
-	 * ended up. getLocalDestinationLocation is the PATHED destination, so a wall between
-	 * the player and the clicked tile silently moves it; the walk entry carries what the
-	 * engine actually resolved the cursor to, before any of that.
-	 */
-	@Subscribe
-	public void onMenuOptionClicked(net.runelite.api.events.MenuOptionClicked e)
-	{
-		if (!config.orbDebug())
-		{
-			return;
-		}
-		// NOT filtered to WALK: a minimap click turned out not to raise that action at all,
-		// so the filter hid the very thing it was added to catch. log every action taken
-		// with the cursor over the map and let the data say which one the minimap uses.
-		Rectangle mb = mapBounds;
-		net.runelite.api.Point mouse = client.getMouseCanvasPosition();
-		if (mb == null || mouse == null || !mb.contains(mouse.getX(), mouse.getY()))
-		{
-			return;
-		}
-		Widget mapWidget = top(MINIMAP_MAP);
-		net.runelite.api.Point mapLoc = mapWidget == null ? null : mapWidget.getCanvasLocation();
-		log.debug("MHUD menu action={} param0={} param1={} id={} widgetId={} opt='{}'"
-				+ " mouse=({},{}) mb={} mapWidgetCanvas=({},{},{}x{}) yaw={}",
-			e.getMenuAction(), e.getParam0(), e.getParam1(), e.getId(), e.getWidgetId(),
-			e.getMenuOption(),
-			mouse.getX(), mouse.getY(), mb,
-			mapLoc == null ? -1 : mapLoc.getX(), mapLoc == null ? -1 : mapLoc.getY(),
-			mapWidget == null ? -1 : mapWidget.getWidth(),
-			mapWidget == null ? -1 : mapWidget.getHeight(),
-			client.getCameraYaw());
 	}
 
 	@Subscribe
 	public void onConfigChanged(ConfigChanged e)
 	{
+		// ANY group, not just ours: a resource pack being enabled, disabled or swapped
+		// changes the sprite override table, and the overlay's art is memoised by sprite
+		// id, so without this it keeps drawing the old pack until the plugin restarts
+		frameOverlay.clearArtCaches();
+
 		// the drag itself writes posX/posY; rebuilding on those would reset the widget
 		// sprite cache on every mouse release and flicker the map
 		if (MysticHudConfig.GROUP.equals(e.getGroup())
@@ -753,9 +538,63 @@ public class MysticHudPlugin extends Plugin
 		apply();
 	}
 
+	/**
+	 * Runs the stock orb's own op. The widgets are kept hidden so the stock orb does not
+	 * show through in the middle of the map, but an op does not fire on a hidden widget,
+	 * so they are unhidden for the length of this call and put straight back. Op 2 is
+	 * Floating World Map; op 1 opens nothing here, which is why the first attempt at
+	 * forwarding the click looked like it did nothing at all.
+	 */
+	private void openWorldMap()
+	{
+		Widget parent = orb(WORLD_MAP_ORB);
+		Widget action = orb(WORLD_MAP_ACTION);
+		if (parent == null || action == null)
+		{
+			return;
+		}
+		boolean parentHidden = parent.isSelfHidden();
+		boolean actionHidden = action.isSelfHidden();
+		parent.setHidden(false);
+		action.setHidden(false);
+		client.menuAction(-1, ORBS << 16 | WORLD_MAP_ACTION, MenuAction.CC_OP, 2, -1,
+			"Floating World Map", "");
+		action.setHidden(actionHidden);
+		parent.setHidden(parentHidden);
+	}
+
+	/**
+	 * Every toplevel lookup goes through here, so the layout is resolved in exactly one
+	 * place. getTopLevelInterfaceId hands back 548 fixed, 161 classic or 164 modern
+	 * directly; isResized() cannot tell the two resizable layouts apart.
+	 */
 	private Widget top(int child)
 	{
-		return client.getWidget(TOPLEVEL << 16 | child);
+		return client.getWidget(client.getTopLevelInterfaceId() << 16 | child);
+	}
+
+	/** The minimap block, whichever layout is up. */
+	private Widget minimapBlock()
+	{
+		return top(minimapBlockChild(client.getTopLevelInterfaceId()));
+	}
+
+	/**
+	 * Attach is a MODERN-only feature. In resizable classic the inventory panel does not
+	 * sit where the glue assumes, so attaching does nothing useful there and only takes
+	 * away the drag. Read through here everywhere rather than the config directly, so the
+	 * drag guard, the layout and the overlay's bridged seam cannot disagree about it.
+	 */
+	boolean attachInventory()
+	{
+		return config.attachInventory()
+			&& client.getTopLevelInterfaceId() != TOPLEVEL_CLASSIC;
+	}
+
+	/** The inventory panel, whichever layout is up. Also used by the overlay. */
+	Widget invPanel()
+	{
+		return top(invPanelChild(client.getTopLevelInterfaceId()));
 	}
 
 	private Widget orb(int child)
@@ -765,11 +604,14 @@ public class MysticHudPlugin extends Plugin
 
 	boolean active()
 	{
-		if (client.getGameState() != GameState.LOGGED_IN || !client.isResized())
+		// NOT isResized(): that is true for both resizable layouts and false for fixed, so
+		// it cannot say WHICH resizable layout is up, and the child ids differ between them
+		if (client.getGameState() != GameState.LOGGED_IN
+			|| !isResizableToplevel(client.getTopLevelInterfaceId()))
 		{
 			return false;
 		}
-		Widget block = top(MINIMAP_BLOCK);
+		Widget block = minimapBlock();
 		return block != null && !block.isHidden();
 	}
 
@@ -790,6 +632,21 @@ public class MysticHudPlugin extends Plugin
 	private int mapInset()
 	{
 		return (INV_W - cfgMapW()) / 2;
+	}
+
+	/**
+	 * Where the world map orb is PAINTED, in the map's bottom right corner. The stock
+	 * widget cannot go here: group 160 has a fixed clip, so once the xp orb widens the
+	 * block the orb is clipped or dragged inward whatever its position is set to. The
+	 * overlay draws the game's own orb sprites at this rect instead, the same way the
+	 * compass is already drawn, and the widget is hidden.
+	 */
+	static Rectangle worldMapBounds(Rectangle map)
+	{
+		return new Rectangle(
+			map.x + map.width - WORLD_ORB_SIZE - ORB_INSET_X,
+			map.y + map.height - WORLD_ORB_SIZE - ORB_INSET,
+			WORLD_ORB_SIZE, WORLD_ORB_SIZE);
 	}
 
 	private int cfgMapH()
@@ -861,7 +718,7 @@ public class MysticHudPlugin extends Plugin
 			return;
 		}
 
-		Widget block = top(MINIMAP_BLOCK);
+		Widget block = minimapBlock();
 		Widget parent = block.getParent();
 		if (parent == null)
 		{
@@ -886,7 +743,7 @@ public class MysticHudPlugin extends Plugin
 		// ZOOM IS NEVER TOUCHED, not even the enable flag: enabling it is the only
 		// click-related change in the build where the walk offset returned
 
-		Widget inv = top(INV_PANEL);
+		Widget inv = invPanel();
 		boolean invOpen = inv != null && !inv.isHidden() && inv.getHeight() > 0;
 		Widget inner = top(MINIMAP_INNER);
 		Widget host = top(ORB_HOST);
@@ -927,7 +784,7 @@ public class MysticHudPlugin extends Plugin
 		// anchor: attached glues onto the inventory panel; free mode anchors to where the
 		// panel ALWAYS sits (not whether it is open, which jumps ~275px). Position X/Y
 		// shift from there in every mode.
-		boolean attached = config.attachInventory();
+		boolean attached = attachInventory();
 		int anchorTop = invOpen ? inv.getRelativeY() : parent.getHeight() - 2 * 36;
 		int bottom;
 		if (attached)
@@ -960,7 +817,7 @@ public class MysticHudPlugin extends Plugin
 		// blockW - mapW on the left with right/bottom flush. any extra width becomes
 		// visible map outside the frame.
 		int blockW = INV_W + (config.showExtraOrbs() ? SIDE_PAD : 0);
-		Widget block = top(MINIMAP_BLOCK);
+		Widget block = minimapBlock();
 		Widget parent = block == null ? null : block.getParent();
 		if (block == null || parent == null)
 		{
@@ -1069,7 +926,11 @@ public class MysticHudPlugin extends Plugin
 		}
 		boolean extras = config.showExtraOrbs();
 		dirty |= hide(orb(XP_ORB), !extras);
-		dirty |= hide(orb(WORLD_MAP_ORB), !config.showWorldMap());
+		// the stock orb cannot share group 160's fixed clip with the xp orb, so it stays
+		// hidden and the overlay paints the game's own sprites in its place. hiding it is
+		// fine even though the op we forward clicks to lives inside it: openWorldMap
+		// unhides it for the length of that one call and puts it straight back.
+		dirty |= hide(orb(WORLD_MAP_ORB), true);
 
 		// settle the containers so canvas positions below are current. only when
 		// something actually moved, otherwise this walks the subtree every frame
@@ -1143,23 +1004,6 @@ public class MysticHudPlugin extends Plugin
 				if (set(xp, visX - 38 - hx, visY + 42 - hy, null, null))
 				{
 					xp.revalidate();
-				}
-			}
-		}
-		// world map orb inside the map's bottom right corner
-		if (config.showWorldMap())
-		{
-			Widget world = orb(WORLD_MAP_ORB);
-			if (world != null)
-			{
-				// right-anchored: originalX is measured from the host's right edge.
-				// mirrors the compass across the map's diagonal
-				// the map's own right edge, not the frame's, so the orb stays on the map
-				int desiredX = visX + inset + cfgMapW() - 30 - ORB_INSET_X;
-				if (set(world, hx + host.getWidth() - 30 - desiredX,
-					visY + mapH - 30 - ORB_INSET - hy, null, null))
-				{
-					world.revalidate();
 				}
 			}
 		}
@@ -1271,6 +1115,24 @@ public class MysticHudPlugin extends Plugin
 		return changed;
 	}
 
+	private boolean setAbsoluteX(Widget w, int x)
+	{
+		remember(w);
+		savedXPositionModes.putIfAbsent(w, w.getXPositionMode());
+		boolean changed = false;
+		if (w.getXPositionMode() != WidgetPositionMode.ABSOLUTE_LEFT)
+		{
+			w.setXPositionMode(WidgetPositionMode.ABSOLUTE_LEFT);
+			changed = true;
+		}
+		if (w.getOriginalX() != x)
+		{
+			w.setOriginalX(x);
+			changed = true;
+		}
+		return changed;
+	}
+
 	private boolean hide(Widget w, boolean hidden)
 	{
 		if (w == null)
@@ -1301,6 +1163,10 @@ public class MysticHudPlugin extends Plugin
 		{
 			e.getKey().setHidden(e.getValue());
 		}
+		for (Map.Entry<Widget, Integer> e : savedXPositionModes.entrySet())
+		{
+			e.getKey().setXPositionMode(e.getValue());
+		}
 		clearMaskOverride();
 		Widget innerW = top(MINIMAP_INNER);
 		if (innerW != null)
@@ -1318,12 +1184,13 @@ public class MysticHudPlugin extends Plugin
 		List<Widget> roots = new ArrayList<>(saved.keySet());
 		saved.clear();
 		savedHidden.clear();
+		savedXPositionModes.clear();
 		mapBounds = null;
 		for (Widget w : roots)
 		{
 			w.revalidate();
 		}
-		Widget block = top(MINIMAP_BLOCK);
+		Widget block = minimapBlock();
 		if (block != null)
 		{
 			revalidateDeep(block);
