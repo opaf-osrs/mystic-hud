@@ -41,9 +41,9 @@ import net.runelite.client.ui.overlay.OverlayManager;
  */
 @Slf4j
 @PluginDescriptor(
-	name = "Mystic HUD",
+	name = "Harrisun Mystic UI",
 	description = "Minimap and orbs as a rectangular block above the inventory",
-	tags = {"minimap", "orbs", "layout", "hud", "mystic"}
+	tags = {"minimap", "orbs", "layout", "hud", "ui", "mystic", "harrisun"}
 )
 public class MysticHudPlugin extends Plugin
 {
@@ -245,7 +245,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b90-hub";
+	static final String BUILD_TAG = "b91-hub";
 
 	@Inject
 	private Client client;

@@ -1,4 +1,4 @@
-# Mystic HUD
+# Harrisun Mystic UI
 
 Moves the minimap and orbs into a rectangular block that sits above the inventory, in
 either resizable layout.
