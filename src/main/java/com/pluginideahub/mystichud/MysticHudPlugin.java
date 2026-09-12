@@ -11,7 +11,6 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.MenuAction;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.VarbitChanged;
@@ -69,6 +68,14 @@ public class MysticHudPlugin extends Plugin
 	static final int INV_PANEL_MODERN = 96;      // 204x275 inventory panel
 	static final int INV_PANEL_CLASSIC = 73;
 
+	/**
+	 * The world map interface. Our host widget is invisible but sets noClickThrough, and
+	 * with the xp orb on it is 276 wide across the top right, which is where the world
+	 * map's own close button sits. So it ate that click and the map could not be closed.
+	 * While the map is open the block stops swallowing clicks.
+	 */
+	static final int WORLDMAP_GROUP = InterfaceID.WORLDMAP;
+
 	/** True when the id is one of the two resizable toplevels we can lay out in. */
 	static boolean isResizableToplevel(int toplevel)
 	{
@@ -97,9 +104,6 @@ public class MysticHudPlugin extends Plugin
 	// activity adviser and 160:43 (1609 + 1668) is the store orb; both fall to the sweep
 	static final int XP_ORB = 6;
 	static final int WORLD_MAP_ORB = 49;
-	// the op child the stock orb runs to open the world map. we paint our own orb and
-	// forward the player's click to this, because the widget itself cannot be moved.
-	static final int WORLD_MAP_ACTION = 55;
 	// the glossy sphere art inside each orb (fill sprite + status overlay containers);
 	// 160:16 stays visible, the hp icon turned out to live under it
 	static final int[] SPHERES = {11, 12, 14, 22, 23, 30, 31, 38, 39, 41};
@@ -206,7 +210,10 @@ public class MysticHudPlugin extends Plugin
 	private static final int VENOM_THRESHOLD = 1000000;
 
 	// geometry, all relative to the 211-wide minimap block
-	// extra block width so the xp orb beside the map is not clipped off the edge
+	// extra block width so an orb beside the map is not clipped off the edge. needed for
+	// the xp orb and for the world map orb: both live in this strip, because anything
+	// sitting ON the map gets its clicks eaten by the map container, which is drawn over
+	// them and cannot be reordered.
 	static final int SIDE_PAD = 72;
 	static final int NATIVE_MAP = 152; // the engine's fixed minimap draw HEIGHT
 	static final int INV_W = 204;      // inventory panel width; the map matches it
@@ -232,16 +239,13 @@ public class MysticHudPlugin extends Plugin
 	// so the visible gap reads the same on both axes
 	static final int ORB_INSET = 6;  // lower, snug to the bottom divider
 	static final int ORB_INSET_X = 12;
-	// the visible world map orb is 30 inside a 57 wide stock widget, sitting against its
-	// right edge, so the widget's left is ORB_W - WORLD_ORB_SIZE further left again
-	static final int WORLD_ORB_SIZE = 30;
 	// height of the whole side stack in resizable modern: 204x275 panel plus two 36px
 	// tab rows. used as a STABLE anchor so the block does not jump when a tab opens
 	static final int INV_STACK_H = 275 + 2 * 36;
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b85-hub";
+	static final String BUILD_TAG = "b90-hub";
 
 	@Inject
 	private Client client;
@@ -310,16 +314,6 @@ public class MysticHudPlugin extends Plugin
 					e.consume();
 					return e;
 				}
-			}
-			// our painted orb has no widget of its own, so the click it would have taken
-			// is forwarded to the stock op. this runs ONLY off a real button press from
-			// the player, the same shape as the compass click above.
-			if (b != null && config.showWorldMap() && e.getButton() == MouseEvent.BUTTON1
-				&& !e.isShiftDown() && hits(worldMapBounds(mapRect()), e))
-			{
-				clientThread.invokeLater(MysticHudPlugin.this::openWorldMap);
-				e.consume();
-				return e;
 			}
 			// shift, not alt: Windows and several window managers swallow alt-drag.
 			// free mode only: attached is glued and ignores position entirely
@@ -538,36 +532,6 @@ public class MysticHudPlugin extends Plugin
 		apply();
 	}
 
-	/**
-	 * Runs the stock orb's own op. The widgets are kept hidden so the stock orb does not
-	 * show through in the middle of the map, but an op does not fire on a hidden widget,
-	 * so they are unhidden for the length of this call and put straight back. Op 2 is
-	 * Floating World Map; op 1 opens nothing here, which is why the first attempt at
-	 * forwarding the click looked like it did nothing at all.
-	 */
-	private void openWorldMap()
-	{
-		Widget parent = orb(WORLD_MAP_ORB);
-		Widget action = orb(WORLD_MAP_ACTION);
-		if (parent == null || action == null)
-		{
-			return;
-		}
-		boolean parentHidden = parent.isSelfHidden();
-		boolean actionHidden = action.isSelfHidden();
-		parent.setHidden(false);
-		action.setHidden(false);
-		client.menuAction(-1, ORBS << 16 | WORLD_MAP_ACTION, MenuAction.CC_OP, 2, -1,
-			"Floating World Map", "");
-		action.setHidden(actionHidden);
-		parent.setHidden(parentHidden);
-	}
-
-	/**
-	 * Every toplevel lookup goes through here, so the layout is resolved in exactly one
-	 * place. getTopLevelInterfaceId hands back 548 fixed, 161 classic or 164 modern
-	 * directly; isResized() cannot tell the two resizable layouts apart.
-	 */
 	private Widget top(int child)
 	{
 		return client.getWidget(client.getTopLevelInterfaceId() << 16 | child);
@@ -602,6 +566,13 @@ public class MysticHudPlugin extends Plugin
 		return client.getWidget(ORBS << 16 | child);
 	}
 
+	/** True while the world map is up, which is when our block must stop eating clicks. */
+	private boolean worldMapOpen()
+	{
+		Widget w = client.getWidget(WORLDMAP_GROUP << 16);
+		return w != null && !w.isHidden();
+	}
+
 	boolean active()
 	{
 		// NOT isResized(): that is true for both resizable layouts and false for fixed, so
@@ -632,21 +603,6 @@ public class MysticHudPlugin extends Plugin
 	private int mapInset()
 	{
 		return (INV_W - cfgMapW()) / 2;
-	}
-
-	/**
-	 * Where the world map orb is PAINTED, in the map's bottom right corner. The stock
-	 * widget cannot go here: group 160 has a fixed clip, so once the xp orb widens the
-	 * block the orb is clipped or dragged inward whatever its position is set to. The
-	 * overlay draws the game's own orb sprites at this rect instead, the same way the
-	 * compass is already drawn, and the widget is hidden.
-	 */
-	static Rectangle worldMapBounds(Rectangle map)
-	{
-		return new Rectangle(
-			map.x + map.width - WORLD_ORB_SIZE - ORB_INSET_X,
-			map.y + map.height - WORLD_ORB_SIZE - ORB_INSET,
-			WORLD_ORB_SIZE, WORLD_ORB_SIZE);
 	}
 
 	private int cfgMapH()
@@ -816,7 +772,9 @@ public class MysticHudPlugin extends Plugin
 		// this container (right-anchored), proven by the bleed being precisely
 		// blockW - mapW on the left with right/bottom flush. any extra width becomes
 		// visible map outside the frame.
-		int blockW = INV_W + (config.showExtraOrbs() ? SIDE_PAD : 0);
+		// the strip is there if EITHER orb needs it
+		boolean sideStrip = config.showExtraOrbs() || config.showWorldMap();
+		int blockW = INV_W + (sideStrip ? SIDE_PAD : 0);
 		Widget block = minimapBlock();
 		Widget parent = block == null ? null : block.getParent();
 		if (block == null || parent == null)
@@ -842,14 +800,15 @@ public class MysticHudPlugin extends Plugin
 			// the stock UI guards the minimap with invisible MAP_NOCLICK shims so clicks
 			// cannot fall through to the full-bleed 3D scene; our relocated block has no
 			// shim under it, so the containers themselves must stop the fall-through
-			inner.setNoClickThrough(true);
+			// not while the world map is open, or the block swallows its close button
+			inner.setNoClickThrough(!worldMapOpen());
 		}
 
 		Widget host = top(ORB_HOST);
 		if (host != null)
 		{
 			dirty |= set(host, dx, targetY, blockW, blockH + 4);
-			host.setNoClickThrough(true);
+			host.setNoClickThrough(!worldMapOpen());
 		}
 
 		Widget map = top(MINIMAP_MAP);
@@ -926,11 +885,11 @@ public class MysticHudPlugin extends Plugin
 		}
 		boolean extras = config.showExtraOrbs();
 		dirty |= hide(orb(XP_ORB), !extras);
-		// the stock orb cannot share group 160's fixed clip with the xp orb, so it stays
-		// hidden and the overlay paints the game's own sprites in its place. hiding it is
-		// fine even though the op we forward clicks to lives inside it: openWorldMap
-		// unhides it for the length of that one call and puts it straight back.
-		dirty |= hide(orb(WORLD_MAP_ORB), true);
+		// left exactly where the client puts it. we used to hide it and paint our own in
+		// the map's corner, which meant forwarding the click through menuAction to reach
+		// the stock op, and a synthesised menu action is the sort of thing the hub's
+		// classifier is entitled to object to. not worth it for an orb.
+		dirty |= hide(orb(WORLD_MAP_ORB), !config.showWorldMap());
 
 		// settle the containers so canvas positions below are current. only when
 		// something actually moved, otherwise this walks the subtree every frame
@@ -1004,6 +963,27 @@ public class MysticHudPlugin extends Plugin
 				if (set(xp, visX - 38 - hx, visY + 42 - hy, null, null))
 				{
 					xp.revalidate();
+				}
+			}
+		}
+
+		// world map orb in the same strip, under the xp orb. it CANNOT sit on the map:
+		// the map container is drawn over it and takes the click, and widget draw order
+		// is not ours to change. out here it is the stock widget in clear space, so it
+		// answers its own click and needs nothing synthesised.
+		if (config.showWorldMap())
+		{
+			Widget world = orb(WORLD_MAP_ORB);
+			if (world != null)
+			{
+				// the SAME x as the xp orb above it. both are the stock 57 wide widget
+				// with the visible orb offset the same way inside it, so compensating for
+				// that on one and not the other is what put this 27px left of the xp orb.
+				boolean moved = setAbsoluteX(world, visX - 38 - hx);
+				moved |= set(world, null, visY + (extras ? 96 : 42) - hy, null, null);
+				if (moved)
+				{
+					world.revalidate();
 				}
 			}
 		}

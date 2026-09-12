@@ -276,7 +276,7 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "showExtraOrbs",
 		name = "XP orb",
-		description = "Show the xp counter orb beside the minimap",
+		description = "Show the xp counter orb in the strip beside the map",
 		position = 7
 	)
 	default boolean showExtraOrbs()
@@ -322,7 +322,7 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "showWorldMap",
 		name = "World map orb",
-		description = "Show the world map orb in the minimap's bottom right corner",
+		description = "Show the world map orb in the strip beside the map, under the xp orb. It cannot sit on the map itself, the map is drawn over it and would take the click.",
 		position = 11
 	)
 	default boolean showWorldMap()

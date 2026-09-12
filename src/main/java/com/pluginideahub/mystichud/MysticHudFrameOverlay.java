@@ -163,12 +163,6 @@ public class MysticHudFrameOverlay extends Overlay
 			borderFrame(g, mb.x, mb.y, mb.width, mb.height + rowH + 6, false);
 		}
 
-		// the game's own world map orb sprites, painted where the stock widget cannot go
-		if (config.showWorldMap())
-		{
-			worldMapOrb(g, MysticHudPlugin.worldMapBounds(plugin.mapRect()));
-		}
-
 		if (config.showCompass())
 		{
 			Rectangle cb = MysticHudPlugin.compassBounds(plugin.mapRect());
@@ -601,32 +595,6 @@ public class MysticHudFrameOverlay extends Overlay
 			g.drawLine((int) cx, (int) cy, (int) (2 * cx) - nx, (int) (2 * cy) - ny);
 		}
 		g.setClip(oldClip);
-	}
-
-	/** The stock world map orb, ring and planet, with the game's own hover swap. */
-	private void worldMapOrb(Graphics2D g, Rectangle bounds)
-	{
-		net.runelite.api.Point mouse = client.getMouseCanvasPosition();
-		boolean hovered = mouse != null && bounds.contains(mouse.getX(), mouse.getY());
-		BufferedImage ring = sprite(SpriteID.RING_30);
-		BufferedImage planet = sprite(hovered
-			? SpriteID.WorldmapIcon.PLANET_HOVERED
-			: SpriteID.WorldmapIcon.PLANET);
-		if (ring != null)
-		{
-			drawCentered(g, ring, bounds);
-		}
-		if (planet != null)
-		{
-			drawCentered(g, planet, bounds);
-		}
-	}
-
-	private static void drawCentered(Graphics2D g, BufferedImage image, Rectangle bounds)
-	{
-		int x = bounds.x + (bounds.width - image.getWidth()) / 2;
-		int y = bounds.y + (bounds.height - image.getHeight()) / 2;
-		g.drawImage(image, x, y, null);
 	}
 
 	// ---- data ----
