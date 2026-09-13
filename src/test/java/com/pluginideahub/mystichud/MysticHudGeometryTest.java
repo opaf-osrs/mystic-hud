@@ -183,13 +183,13 @@ public class MysticHudGeometryTest
 	}
 
 	/**
-	 * The round-minimap fix only works while the map draws through a sprite id the game never
-	 * uses: the engine caches the shape it built per id, so a real sprite id could already hold
-	 * a stale one. If a game update ever ships a sprite under this id, this fails instead of the
-	 * circle quietly coming back.
+	 * The round-minimap fix only works while the map draws through sprite ids the game never
+	 * uses: the engine keeps the shape it built per id, so a real sprite id could already hold a
+	 * stale one. If a game update ever ships a sprite in the private range, this fails instead of
+	 * the circle quietly coming back.
 	 */
 	@Test
-	public void privateDrawMaskIsNotAGameSprite() throws IllegalAccessException
+	public void privateDrawMasksAreNotGameSprites() throws IllegalAccessException
 	{
 		int checked = 0;
 		java.util.List<Class<?>> classes = new java.util.ArrayList<>();
@@ -202,22 +202,33 @@ public class MysticHudGeometryTest
 				if (f.getType() == int.class && Modifier.isStatic(f.getModifiers()))
 				{
 					checked++;
-					assertTrue(c.getSimpleName() + "." + f.getName() + " is a real sprite on the private "
-						+ "draw mask id, pick another", f.getInt(null) != MysticHudPlugin.DRAW_MASK_SPRITE);
+					assertTrue(c.getSimpleName() + "." + f.getName() + " is a real sprite inside the "
+						+ "private draw mask range", f.getInt(null) < MysticHudPlugin.DRAW_MASK_BASE);
 				}
 			}
 		}
 		assertTrue("found no sprite ids to check against, so the test proved nothing", checked > 1000);
 	}
 
+	/**
+	 * Every size the settings can produce needs its own id, or changing True map width or Map
+	 * height mid-session keeps drawing the old size: the narrow map in a full-width frame.
+	 */
 	@Test
-	public void privateDrawMaskGetsTheOverride()
+	public void everyMapSizeGetsItsOwnDrawMask()
 	{
-		boolean found = false;
-		for (int s : MysticHudPlugin.MAP_MASK_SPRITES)
+		java.util.Set<Integer> ids = new java.util.HashSet<>();
+		for (int w : new int[]{MysticHudPlugin.NATIVE_MAP, MysticHudPlugin.INV_W})
 		{
-			found |= s == MysticHudPlugin.DRAW_MASK_SPRITE;
+			for (int h = 132; h <= 152; h++)
+			{
+				int id = MysticHudPlugin.drawMaskSpriteFor(w, h);
+				assertTrue("draw mask id " + id + " for " + w + "x" + h + " is shared with another size",
+					ids.add(id));
+				assertTrue("draw mask id " + id + " is below the private range",
+					id >= MysticHudPlugin.DRAW_MASK_BASE);
+				assertTrue("draw mask id " + id + " does not fit a 16 bit sprite id", id <= 0xffff);
+			}
 		}
-		assertTrue("the map draws through the private id, so it needs our mask too", found);
 	}
 }

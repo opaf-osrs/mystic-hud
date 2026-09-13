@@ -245,7 +245,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b101-hub";
+	static final String BUILD_TAG = "b102-hub";
 
 	@Inject
 	private Client client;
@@ -424,12 +424,26 @@ public class MysticHudPlugin extends Plugin
 	// once before our override lands that copy is the circle. it then survives the override,
 	// the sprite cache reset and every settings change, which is the minimap coming up round
 	// on some logins and square on others. an id the engine has never drawn has no copy, so it
-	// has to build the shape from our mask. above every sprite id the game uses (8560 at rev240)
-	static final int DRAW_MASK_SPRITE = 60001;
+	// has to build the shape from our mask. every id from here up is ours; the game's own
+	// sprites stop at 8560 (rev240)
+	static final int DRAW_MASK_BASE = 50000;
 	static final int[] MAP_MASK_SPRITES = {
-		MASK_SPRITE, CLICK_MASK_SPRITE, BOND_CLICK_MASK_SPRITE, DRAW_MASK_SPRITE
+		MASK_SPRITE, CLICK_MASK_SPRITE, BOND_CLICK_MASK_SPRITE
 	};
+
+	/**
+	 * A separate id for every mask SIZE, not one id. The stored shape is keyed by id alone, so
+	 * resizing the mask under the same id keeps the old shape: log in with True map width on and
+	 * the id is built 152 wide, turn it off and the map keeps drawing 152 wide in a 204 frame.
+	 * A new size gets a new id and so a fresh shape.
+	 */
+	static int drawMaskSpriteFor(int w, int h)
+	{
+		return DRAW_MASK_BASE + w * 64 + (h & 63);
+	}
 	private final Map<Integer, net.runelite.api.SpritePixels> previousMasks = new HashMap<>();
+	// the private id the map currently draws through, -1 while none is installed
+	private int drawMaskSprite = -1;
 	private net.runelite.api.SpritePixels mask;
 	private int maskW, maskH;
 
@@ -1055,6 +1069,20 @@ public class MysticHudPlugin extends Plugin
 				changed = true;
 			}
 		}
+		int drawId = drawMaskSpriteFor(w, h);
+		if (drawMaskSprite != drawId)
+		{
+			if (drawMaskSprite >= 0)
+			{
+				overrides.remove(drawMaskSprite);
+			}
+			drawMaskSprite = drawId;
+		}
+		if (overrides.get(drawId) != mask)
+		{
+			overrides.put(drawId, mask);
+			changed = true;
+		}
 		if (changed)
 		{
 			// the client caches widget sprites after first draw; without this reset a
@@ -1070,10 +1098,10 @@ public class MysticHudPlugin extends Plugin
 	private void drawThroughOurMask(Widget map)
 	{
 		Map<Integer, net.runelite.api.SpritePixels> overrides = client.getSpriteOverrides();
-		if (overrides != null && mask != null && overrides.get(DRAW_MASK_SPRITE) == mask
-			&& map.getSpriteId() != DRAW_MASK_SPRITE)
+		if (overrides != null && mask != null && drawMaskSprite >= 0
+			&& overrides.get(drawMaskSprite) == mask && map.getSpriteId() != drawMaskSprite)
 		{
-			map.setSpriteId(DRAW_MASK_SPRITE);
+			map.setSpriteId(drawMaskSprite);
 		}
 	}
 
@@ -1081,10 +1109,16 @@ public class MysticHudPlugin extends Plugin
 	{
 		// point the map back at the stock mask BEFORE the private id loses its override
 		Widget map = top(MINIMAP_MAP);
-		if (map != null && map.getSpriteId() == DRAW_MASK_SPRITE)
+		if (map != null && map.getSpriteId() >= DRAW_MASK_BASE)
 		{
 			map.setSpriteId(MASK_SPRITE);
 		}
+		Map<Integer, net.runelite.api.SpritePixels> drawOverrides = client.getSpriteOverrides();
+		if (drawMaskSprite >= 0 && drawOverrides != null)
+		{
+			drawOverrides.remove(drawMaskSprite);
+		}
+		drawMaskSprite = -1;
 		if (previousMasks.isEmpty())
 		{
 			return;
