@@ -1,6 +1,9 @@
 package com.pluginideahub.mystichud;
 
 import java.awt.Rectangle;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import net.runelite.api.gameval.SpriteID;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import org.junit.Test;
@@ -177,5 +180,44 @@ public class MysticHudGeometryTest
 					MysticHudPlugin.MAP_MASK_SPRITES[i] != MysticHudPlugin.MAP_MASK_SPRITES[j]);
 			}
 		}
+	}
+
+	/**
+	 * The round-minimap fix only works while the map draws through a sprite id the game never
+	 * uses: the engine caches the shape it built per id, so a real sprite id could already hold
+	 * a stale one. If a game update ever ships a sprite under this id, this fails instead of the
+	 * circle quietly coming back.
+	 */
+	@Test
+	public void privateDrawMaskIsNotAGameSprite() throws IllegalAccessException
+	{
+		int checked = 0;
+		java.util.List<Class<?>> classes = new java.util.ArrayList<>();
+		classes.add(SpriteID.class);
+		classes.addAll(java.util.Arrays.asList(SpriteID.class.getDeclaredClasses()));
+		for (Class<?> c : classes)
+		{
+			for (Field f : c.getDeclaredFields())
+			{
+				if (f.getType() == int.class && Modifier.isStatic(f.getModifiers()))
+				{
+					checked++;
+					assertTrue(c.getSimpleName() + "." + f.getName() + " is a real sprite on the private "
+						+ "draw mask id, pick another", f.getInt(null) != MysticHudPlugin.DRAW_MASK_SPRITE);
+				}
+			}
+		}
+		assertTrue("found no sprite ids to check against, so the test proved nothing", checked > 1000);
+	}
+
+	@Test
+	public void privateDrawMaskGetsTheOverride()
+	{
+		boolean found = false;
+		for (int s : MysticHudPlugin.MAP_MASK_SPRITES)
+		{
+			found |= s == MysticHudPlugin.DRAW_MASK_SPRITE;
+		}
+		assertTrue("the map draws through the private id, so it needs our mask too", found);
 	}
 }

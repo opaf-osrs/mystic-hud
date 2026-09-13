@@ -245,7 +245,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b91-hub";
+	static final String BUILD_TAG = "b97-hub";
 
 	@Inject
 	private Client client;
@@ -408,6 +408,7 @@ public class MysticHudPlugin extends Plugin
 	private final Map<Widget, Boolean> savedHidden = new HashMap<>();
 	// x position modes we override, so shutDown hands them back like everything else
 	private final Map<Widget, Integer> savedXPositionModes = new HashMap<>();
+	private final Map<Widget, int[]> savedSizeModes = new HashMap<>();
 
 	// the game's own minimap zoom, captured so shutDown can hand it back
 
@@ -418,8 +419,15 @@ public class MysticHudPlugin extends Plugin
 	static final int MASK_SPRITE = 1178;
 	static final int CLICK_MASK_SPRITE = 2154;
 	static final int BOND_CLICK_MASK_SPRITE = 3513;
+	// the map widget draws through THIS id, not 1178. the engine keeps its own copy of the
+	// shape it built from a mask sprite, keyed by sprite id, and if stock 1178 is drawn even
+	// once before our override lands that copy is the circle. it then survives the override,
+	// the sprite cache reset and every settings change, which is the minimap coming up round
+	// on some logins and square on others. an id the engine has never drawn has no copy, so it
+	// has to build the shape from our mask. above every sprite id the game uses (8560 at rev240)
+	static final int DRAW_MASK_SPRITE = 60001;
 	static final int[] MAP_MASK_SPRITES = {
-		MASK_SPRITE, CLICK_MASK_SPRITE, BOND_CLICK_MASK_SPRITE
+		MASK_SPRITE, CLICK_MASK_SPRITE, BOND_CLICK_MASK_SPRITE, DRAW_MASK_SPRITE
 	};
 	private final Map<Integer, net.runelite.api.SpritePixels> previousMasks = new HashMap<>();
 	private net.runelite.api.SpritePixels mask;
@@ -472,9 +480,12 @@ public class MysticHudPlugin extends Plugin
 			saved.clear();
 			savedHidden.clear();
 			savedXPositionModes.clear();
-				mapBounds = null;
-			previousMasks.clear();
-			mask = null;
+			savedSizeModes.clear();
+			mapBounds = null;
+			// NOT previousMasks: the sprite override table is client-wide and outlives the
+			// login screen. clearing the saved originals here made the next login save our
+			// own transparent mask as the "original", so turning the plugin off after a relog
+			// left the stock minimap square
 		}
 		if (e.getGameState() == GameState.LOGGED_IN)
 		{
@@ -826,6 +837,7 @@ public class MysticHudPlugin extends Plugin
 		if (config.squareMinimap())
 		{
 			overrideMask(cfgMapW(), cfgMapH());
+			drawThroughOurMask(map);
 		}
 		else
 		{
@@ -889,7 +901,15 @@ public class MysticHudPlugin extends Plugin
 		// the map's corner, which meant forwarding the click through menuAction to reach
 		// the stock op, and a synthesised menu action is the sort of thing the hub's
 		// classifier is entitled to object to. not worth it for an orb.
-		dirty |= hide(orb(WORLD_MAP_ORB), !config.showWorldMap());
+		// NOT hidden when switched off: the game's ctrl+m world map shortcut belongs to this
+		// widget, and a hidden widget hears no keys. collapsed to nothing instead, which the
+		// client neither draws nor lets you click, but which still gets the key press
+		Widget worldOrb = orb(WORLD_MAP_ORB);
+		dirty |= hide(worldOrb, false);
+		if (worldOrb != null && !config.showWorldMap())
+		{
+			dirty |= collapse(worldOrb);
+		}
 
 		// settle the containers so canvas positions below are current. only when
 		// something actually moved, otherwise this walks the subtree every frame
@@ -979,7 +999,8 @@ public class MysticHudPlugin extends Plugin
 				// the SAME x as the xp orb above it. both are the stock 57 wide widget
 				// with the visible orb offset the same way inside it, so compensating for
 				// that on one and not the other is what put this 27px left of the xp orb.
-				boolean moved = setAbsoluteX(world, visX - 38 - hx);
+				boolean moved = uncollapse(world);
+				moved |= setAbsoluteX(world, visX - 38 - hx);
 				moved |= set(world, null, visY + (extras ? 96 : 42) - hy, null, null);
 				if (moved)
 				{
@@ -1032,8 +1053,28 @@ public class MysticHudPlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Only once our mask is actually registered under the private id: pointing the widget at
+	 * it any earlier would ask the engine for a sprite that does not exist.
+	 */
+	private void drawThroughOurMask(Widget map)
+	{
+		Map<Integer, net.runelite.api.SpritePixels> overrides = client.getSpriteOverrides();
+		if (overrides != null && mask != null && overrides.get(DRAW_MASK_SPRITE) == mask
+			&& map.getSpriteId() != DRAW_MASK_SPRITE)
+		{
+			map.setSpriteId(DRAW_MASK_SPRITE);
+		}
+	}
+
 	private void clearMaskOverride()
 	{
+		// point the map back at the stock mask BEFORE the private id loses its override
+		Widget map = top(MINIMAP_MAP);
+		if (map != null && map.getSpriteId() == DRAW_MASK_SPRITE)
+		{
+			map.setSpriteId(MASK_SPRITE);
+		}
 		if (previousMasks.isEmpty())
 		{
 			return;
@@ -1113,6 +1154,45 @@ public class MysticHudPlugin extends Plugin
 		return changed;
 	}
 
+	/** Zero size in absolute mode: not drawn, not clickable, but not hidden either. */
+	private boolean collapse(Widget w)
+	{
+		remember(w);
+		savedSizeModes.putIfAbsent(w, new int[]{w.getWidthMode(), w.getHeightMode()});
+		boolean changed = false;
+		if (w.getWidthMode() != net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE)
+		{
+			w.setWidthMode(net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE);
+			changed = true;
+		}
+		if (w.getHeightMode() != net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE)
+		{
+			w.setHeightMode(net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE);
+			changed = true;
+		}
+		changed |= set(w, null, null, 0, 0);
+		return changed;
+	}
+
+	/** Undo collapse(): the stock size modes and the stock width and height. */
+	private boolean uncollapse(Widget w)
+	{
+		int[] modes = savedSizeModes.remove(w);
+		int[] original = saved.get(w);
+		boolean changed = false;
+		if (modes != null)
+		{
+			w.setWidthMode(modes[0]);
+			w.setHeightMode(modes[1]);
+			changed = true;
+		}
+		if (original != null)
+		{
+			changed |= set(w, null, null, original[2], original[3]);
+		}
+		return changed;
+	}
+
 	private boolean hide(Widget w, boolean hidden)
 	{
 		if (w == null)
@@ -1147,6 +1227,11 @@ public class MysticHudPlugin extends Plugin
 		{
 			e.getKey().setXPositionMode(e.getValue());
 		}
+		for (Map.Entry<Widget, int[]> e : savedSizeModes.entrySet())
+		{
+			e.getKey().setWidthMode(e.getValue()[0]);
+			e.getKey().setHeightMode(e.getValue()[1]);
+		}
 		clearMaskOverride();
 		Widget innerW = top(MINIMAP_INNER);
 		if (innerW != null)
@@ -1165,6 +1250,7 @@ public class MysticHudPlugin extends Plugin
 		saved.clear();
 		savedHidden.clear();
 		savedXPositionModes.clear();
+		savedSizeModes.clear();
 		mapBounds = null;
 		for (Widget w : roots)
 		{
