@@ -245,7 +245,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b100-hub";
+	static final String BUILD_TAG = "b101-hub";
 
 	@Inject
 	private Client client;
@@ -408,7 +408,7 @@ public class MysticHudPlugin extends Plugin
 	private final Map<Widget, Boolean> savedHidden = new HashMap<>();
 	// x position modes we override, so shutDown hands them back like everything else
 	private final Map<Widget, Integer> savedXPositionModes = new HashMap<>();
-	private final Map<Widget, int[]> savedSizeModes = new HashMap<>();
+	private final Map<Widget, Integer> savedOpacity = new HashMap<>();
 
 	// the game's own minimap zoom, captured so shutDown can hand it back
 
@@ -480,7 +480,7 @@ public class MysticHudPlugin extends Plugin
 			saved.clear();
 			savedHidden.clear();
 			savedXPositionModes.clear();
-			savedSizeModes.clear();
+			savedOpacity.clear();
 			mapBounds = null;
 			// NOT previousMasks: the sprite override table is client-wide and outlives the
 			// login screen. clearing the saved originals here made the next login save our
@@ -901,26 +901,24 @@ public class MysticHudPlugin extends Plugin
 		// the map's corner, which meant forwarding the click through menuAction to reach
 		// the stock op, and a synthesised menu action is the sort of thing the hub's
 		// classifier is entitled to object to. not worth it for an orb.
-		// NOT hidden when switched off: the game's ctrl+m world map shortcut belongs to this
-		// widget, and a hidden widget hears no keys. collapsed to nothing instead, which the
-		// client neither draws nor lets you click, but which still gets the key press
+		// switched off it is made INVISIBLE, not hidden, shrunk or moved. the game's ctrl+m
+		// world map shortcut belongs to this widget and only reaches it while it is unhidden
+		// and actually on screen at a real size: hiding it, collapsing it to 0x0 and parking it
+		// off to the side each killed ctrl+m. so it stays at its stock size in its stock spot
+		// (the map's corner, where clicks go to the map anyway) with every part fully see-through
 		Widget worldOrb = orb(WORLD_MAP_ORB);
 		dirty |= hide(worldOrb, false);
 		if (worldOrb != null && !config.showWorldMap())
 		{
-			// zero size alone still let its icon draw at the stock spot, over the map's corner.
-			// the orbs group clips to its own bounds, so parked well outside them nothing of it
-			// is drawn or clickable, and position has no bearing on the key press
-			boolean parked = collapse(worldOrb);
-			parked |= setAbsoluteX(worldOrb, -2000);
-			if (parked)
+			boolean moved = stockPosition(worldOrb);
+			if (moved)
 			{
 				// the orbs are their own interface nested in the block, and revalidateDeep only
-				// walks static children, so without this the new size and spot are stored and
-				// never applied: the orb just stays where it was
+				// walks static children, so without this a move is stored and never applied
 				worldOrb.revalidate();
 			}
-			dirty |= parked;
+			dirty |= moved;
+			seeThrough(worldOrb, true, 0);
 		}
 
 		// settle the containers so canvas positions below are current. only when
@@ -1011,8 +1009,8 @@ public class MysticHudPlugin extends Plugin
 				// the SAME x as the xp orb above it. both are the stock 57 wide widget
 				// with the visible orb offset the same way inside it, so compensating for
 				// that on one and not the other is what put this 27px left of the xp orb.
-				boolean moved = uncollapse(world);
-				moved |= setAbsoluteX(world, visX - 38 - hx);
+				seeThrough(world, false, 0);
+				boolean moved = setAbsoluteX(world, visX - 38 - hx);
 				moved |= set(world, null, visY + (extras ? 96 : 42) - hy, null, null);
 				if (moved)
 				{
@@ -1166,43 +1164,59 @@ public class MysticHudPlugin extends Plugin
 		return changed;
 	}
 
-	/** Zero size in absolute mode: not drawn, not clickable, but not hidden either. */
-	private boolean collapse(Widget w)
+	/** The x mode, x and y the client originally gave the widget. */
+	private boolean stockPosition(Widget w)
 	{
 		remember(w);
-		savedSizeModes.putIfAbsent(w, new int[]{w.getWidthMode(), w.getHeightMode()});
+		int[] stock = saved.get(w);
+		Integer mode = savedXPositionModes.get(w);
 		boolean changed = false;
-		if (w.getWidthMode() != net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE)
+		if (mode != null && w.getXPositionMode() != mode)
 		{
-			w.setWidthMode(net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE);
+			w.setXPositionMode(mode);
 			changed = true;
 		}
-		if (w.getHeightMode() != net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE)
-		{
-			w.setHeightMode(net.runelite.api.widgets.WidgetSizeMode.ABSOLUTE);
-			changed = true;
-		}
-		changed |= set(w, null, null, 0, 0);
+		changed |= set(w, stock[0], stock[1], null, null);
 		return changed;
 	}
 
-	/** Undo collapse(): the stock size modes and the stock width and height. */
-	private boolean uncollapse(Widget w)
+	/**
+	 * Fully transparent (or back to how it was) for the widget and everything under it. Run
+	 * every frame while wanted: the client rebuilds the orb's dynamic children, and a fresh
+	 * one arrives opaque.
+	 */
+	private void seeThrough(Widget w, boolean invisible, int depth)
 	{
-		int[] modes = savedSizeModes.remove(w);
-		int[] original = saved.get(w);
-		boolean changed = false;
-		if (modes != null)
+		if (w == null || depth > 3)
 		{
-			w.setWidthMode(modes[0]);
-			w.setHeightMode(modes[1]);
-			changed = true;
+			return;
 		}
-		if (original != null)
+		if (invisible)
 		{
-			changed |= set(w, null, null, original[2], original[3]);
+			savedOpacity.putIfAbsent(w, w.getOpacity());
+			if (w.getOpacity() != 255)
+			{
+				w.setOpacity(255);
+			}
 		}
-		return changed;
+		else
+		{
+			Integer original = savedOpacity.remove(w);
+			if (original != null)
+			{
+				w.setOpacity(original);
+			}
+		}
+		for (Widget[] kids : new Widget[][]{w.getStaticChildren(), w.getDynamicChildren()})
+		{
+			if (kids != null)
+			{
+				for (Widget k : kids)
+				{
+					seeThrough(k, invisible, depth + 1);
+				}
+			}
+		}
 	}
 
 	private boolean hide(Widget w, boolean hidden)
@@ -1239,10 +1253,9 @@ public class MysticHudPlugin extends Plugin
 		{
 			e.getKey().setXPositionMode(e.getValue());
 		}
-		for (Map.Entry<Widget, int[]> e : savedSizeModes.entrySet())
+		for (Map.Entry<Widget, Integer> e : savedOpacity.entrySet())
 		{
-			e.getKey().setWidthMode(e.getValue()[0]);
-			e.getKey().setHeightMode(e.getValue()[1]);
+			e.getKey().setOpacity(e.getValue());
 		}
 		clearMaskOverride();
 		Widget innerW = top(MINIMAP_INNER);
@@ -1262,7 +1275,7 @@ public class MysticHudPlugin extends Plugin
 		saved.clear();
 		savedHidden.clear();
 		savedXPositionModes.clear();
-		savedSizeModes.clear();
+		savedOpacity.clear();
 		mapBounds = null;
 		for (Widget w : roots)
 		{
