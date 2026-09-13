@@ -245,7 +245,7 @@ public class MysticHudPlugin extends Plugin
 	// bump when the meaning of the saved drag offsets changes
 	static final int LAYOUT_VERSION = 3;
 	// bumped EVERY build; painted on screen so a stale client is instantly obvious
-	static final String BUILD_TAG = "b97-hub";
+	static final String BUILD_TAG = "b100-hub";
 
 	@Inject
 	private Client client;
@@ -908,7 +908,19 @@ public class MysticHudPlugin extends Plugin
 		dirty |= hide(worldOrb, false);
 		if (worldOrb != null && !config.showWorldMap())
 		{
-			dirty |= collapse(worldOrb);
+			// zero size alone still let its icon draw at the stock spot, over the map's corner.
+			// the orbs group clips to its own bounds, so parked well outside them nothing of it
+			// is drawn or clickable, and position has no bearing on the key press
+			boolean parked = collapse(worldOrb);
+			parked |= setAbsoluteX(worldOrb, -2000);
+			if (parked)
+			{
+				// the orbs are their own interface nested in the block, and revalidateDeep only
+				// walks static children, so without this the new size and spot are stored and
+				// never applied: the orb just stays where it was
+				worldOrb.revalidate();
+			}
+			dirty |= parked;
 		}
 
 		// settle the containers so canvas positions below are current. only when
@@ -987,10 +999,10 @@ public class MysticHudPlugin extends Plugin
 			}
 		}
 
-		// world map orb in the same strip, under the xp orb. it CANNOT sit on the map:
-		// the map container is drawn over it and takes the click, and widget draw order
-		// is not ours to change. out here it is the stock widget in clear space, so it
-		// answers its own click and needs nothing synthesised.
+		// world map orb in the same strip, under the xp orb. it CANNOT sit on the map: the
+		// map takes the click and walks you there instead (tried again in b99, same result),
+		// and widget draw order is not ours to change. out here it is the stock widget in
+		// clear space, so it answers its own click and needs nothing synthesised.
 		if (config.showWorldMap())
 		{
 			Widget world = orb(WORLD_MAP_ORB);

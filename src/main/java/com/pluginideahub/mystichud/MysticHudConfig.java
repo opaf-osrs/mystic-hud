@@ -322,7 +322,7 @@ public interface MysticHudConfig extends Config
 	@ConfigItem(
 		keyName = "showWorldMap",
 		name = "World map orb",
-		description = "Show the world map orb in the strip beside the map, under the xp orb. It cannot sit on the map itself, the map is drawn over it and would take the click.",
+		description = "Show the world map orb in the strip beside the map, under the xp orb. Ctrl+M opens the world map either way.",
 		position = 11
 	)
 	default boolean showWorldMap()
